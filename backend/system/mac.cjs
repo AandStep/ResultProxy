@@ -1,15 +1,14 @@
-const { exec } = require("child_process");
+const { exec, execSync } = require("child_process");
 
 // Локальный кэш процессов для быстродействия белых списков
 let processTreeCache = {};
 let isCaching = false;
 
 // Вспомогательная функция для получения активных сетевых адаптеров Mac (Wi-Fi, Ethernet)
-// Мы игнорируем отключенные сервисы (содержат *) и виртуальные мосты
 async function getActiveServices() {
   return new Promise((resolve) => {
     exec("networksetup -listallnetworkservices", (err, stdout) => {
-      if (err) return resolve(["Wi-Fi"]);
+      if (err) return resolve(["Wi-Fi", "Ethernet"]);
       const services = stdout
         .split("\n")
         .map((l) => l.trim())
@@ -19,16 +18,14 @@ async function getActiveServices() {
             !l.includes("*") &&
             l !== "An asterisk (*) denotes that a network service is disabled.",
         );
-      // Если почему-то список пуст, возвращаем стандартные значения
       resolve(services.length > 0 ? services : ["Wi-Fi", "Ethernet"]);
     });
   });
 }
 
-// Получение информации о процессе Mac (Имя и родительский ID)
+// Получение информации о процессе Mac
 async function getProcessInfo(pid) {
   return new Promise((resolve) => {
-    // ps выводит PPID и путь к команде
     exec(`ps -p ${pid} -o ppid=,comm=`, (err, out) => {
       if (err || !out) return resolve(null);
 
@@ -36,17 +33,13 @@ async function getProcessInfo(pid) {
       if (match) {
         const ppid = match[1];
         const comm = match[2];
-
-        // Вытаскиваем имя из пути (например, /Applications/Discord.app/Contents/MacOS/Discord -> discord)
         const parts = comm.split("/");
         let name = parts[parts.length - 1].toLowerCase();
 
-        // Если это приложение .app, берем его нормальное имя
         if (comm.includes(".app/")) {
           const appMatch = comm.match(/\/([^/]+)\.app\//);
           if (appMatch) name = appMatch[1].toLowerCase();
         }
-
         resolve({ name, ppid });
       } else {
         resolve(null);
@@ -97,7 +90,7 @@ module.exports = {
     }, 5000);
   },
 
-  // 2. Статистика сети для графика скорости (парсинг netstat Mac)
+  // 2. Статистика сети (Mac)
   getNetworkTraffic: () => {
     return new Promise((resolve) => {
       exec("netstat -ibn", (err, stdout) => {
@@ -106,13 +99,11 @@ module.exports = {
           sent = 0;
         const lines = stdout.split("\n");
         lines.forEach((line) => {
-          // Берем только физические адаптеры (en0 - Wi-Fi, en1 - Ethernet и т.д.)
           if (line.startsWith("en")) {
             const parts = line.trim().split(/\s+/);
-            // Проверяем строку с MAC-адресом (в ней правильная статистика байтов в macOS)
             if (parts[2] && parts[2].includes("Link#")) {
-              received += parseInt(parts[6]) || 0; // Входящие байты (Ibytes)
-              sent += parseInt(parts[9]) || 0; // Исходящие байты (Obytes)
+              received += parseInt(parts[6]) || 0;
+              sent += parseInt(parts[9]) || 0;
             }
           }
         });
@@ -121,7 +112,7 @@ module.exports = {
     });
   },
 
-  // 3. Установка системного прокси через networksetup
+  // 3. Установка системного прокси
   setSystemProxy: async (
     proxyIp,
     proxyPort,
@@ -132,10 +123,8 @@ module.exports = {
     const services = await getActiveServices();
     let commands = [];
 
-    // Стандартные исключения macOS
     let bypassStr = "*.local 169.254/16 127.0.0.1 localhost";
     if (whitelist && whitelist.length > 0) {
-      // macOS networksetup требует пробелов между доменами
       bypassStr +=
         " " + whitelist.map((d) => (d.includes("*") ? d : `*${d}*`)).join(" ");
     }
@@ -152,7 +141,6 @@ module.exports = {
         commands.push(
           `networksetup -setsocksfirewallproxystate "${service}" on`,
         );
-        // Отключаем HTTP на случай, если он был включен
         commands.push(`networksetup -setwebproxystate "${service}" off`);
         commands.push(`networksetup -setsecurewebproxystate "${service}" off`);
       } else {
@@ -181,7 +169,6 @@ module.exports = {
     }
 
     return new Promise((resolve, reject) => {
-      // Используем && чтобы команды выполнялись последовательно
       exec(commands.join(" && "), (error) => {
         if (error) {
           if (logCallback)
@@ -201,7 +188,7 @@ module.exports = {
     });
   },
 
-  // 4. Отключение прокси
+  // 4. Отключение прокси (Асинхронно)
   disableSystemProxy: async (logCallback) => {
     if (logCallback)
       logCallback("[СИСТЕМА] Очистка настроек прокси macOS...", "info");
@@ -218,12 +205,47 @@ module.exports = {
     }
 
     return new Promise((resolve) => {
-      // Используем ; чтобы продолжить выполнение даже если один из сервисов выдаст ошибку
       exec(commands.join(" ; "), () => resolve());
     });
   },
 
-  // 5. Kill Switch (направляем трафик в "черную дыру")
+  // 5. ЖЕСТКАЯ СИНХРОННАЯ ОЧИСТКА (ДЛЯ ВЫКЛЮЧЕНИЯ ПК)
+  disableSystemProxySync: () => {
+    try {
+      // Пытаемся быстро получить список сервисов, если нет - используем дефолтные Wi-Fi и Ethernet
+      let services = ["Wi-Fi", "Ethernet"];
+      try {
+        const stdout = execSync("networksetup -listallnetworkservices", {
+          encoding: "utf8",
+        });
+        services = stdout
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(
+            (l) =>
+              l &&
+              !l.includes("*") &&
+              l !==
+                "An asterisk (*) denotes that a network service is disabled.",
+          );
+        if (services.length === 0) services = ["Wi-Fi", "Ethernet"];
+      } catch (e) {}
+
+      let commands = [];
+      for (const service of services) {
+        commands.push(`networksetup -setwebproxystate "${service}" off`);
+        commands.push(`networksetup -setsecurewebproxystate "${service}" off`);
+        commands.push(
+          `networksetup -setsocksfirewallproxystate "${service}" off`,
+        );
+      }
+      execSync(commands.join(" ; "), { stdio: "ignore" });
+    } catch (e) {
+      // Игнорируем ошибки, чтобы не блокировать закрытие приложения
+    }
+  },
+
+  // 6. Kill Switch
   applyKillSwitch: async (logCallback) => {
     if (logCallback)
       logCallback(
@@ -251,7 +273,7 @@ module.exports = {
     });
   },
 
-  // 6. Проверка процесса через lsof
+  // 7. Проверка процесса через lsof
   checkAppWhitelist: async (
     remotePort,
     appWhitelist,
@@ -261,7 +283,6 @@ module.exports = {
     if (!appWhitelist || appWhitelist.length === 0 || !remotePort) return false;
 
     return new Promise((resolve) => {
-      // Ищем PID процесса, который установил TCP соединение на нужный порт
       exec(
         `lsof -n -P -iTCP:${remotePort} -sTCP:ESTABLISHED`,
         async (err, stdout) => {
@@ -270,9 +291,8 @@ module.exports = {
           const lines = stdout.trim().split("\n");
           if (lines.length < 2) return resolve(false);
 
-          // Берем вторую строку (первая - это заголовки таблицы lsof)
           const parts = lines[1].trim().split(/\s+/);
-          const pid = parts[1]; // Второй столбец — это PID
+          const pid = parts[1];
 
           if (!pid || isNaN(pid)) return resolve(false);
 
@@ -296,7 +316,6 @@ module.exports = {
 
             chain.push(info.name);
 
-            // Умное сравнение: отрезаем .exe, чтобы правила из Windows работали на Mac
             const matchedApp = appWhitelist.find((app) => {
               const cleanApp = app.toLowerCase().replace(".exe", "");
               return info.name === cleanApp || info.name.includes(cleanApp);
@@ -306,7 +325,7 @@ module.exports = {
               foundAppName = info.name;
               break;
             }
-            currentPid = info.ppid; // Идем вверх по дереву процессов
+            currentPid = info.ppid;
             depth++;
           }
 

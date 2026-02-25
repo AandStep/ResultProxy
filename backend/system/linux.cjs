@@ -1,4 +1,4 @@
-const { exec } = require("child_process");
+const { exec, execSync } = require("child_process");
 const fs = require("fs");
 
 let processTreeCache = {};
@@ -133,6 +133,7 @@ module.exports = {
         commands.push(
           `gsettings set org.gnome.system.proxy.https port ${proxyPort}`,
         );
+
         if (proxyType === "ALL") {
           commands.push(
             `gsettings set org.gnome.system.proxy.socks host '${proxyIp}'`,
@@ -140,6 +141,8 @@ module.exports = {
           commands.push(
             `gsettings set org.gnome.system.proxy.socks port ${proxyPort}`,
           );
+        } else {
+          commands.push(`gsettings set org.gnome.system.proxy.socks host ''`);
         }
       }
 
@@ -156,7 +159,7 @@ module.exports = {
     });
   },
 
-  // 4. Отключение прокси
+  // 4. Отключение прокси (Асинхронно)
   disableSystemProxy: async (logCallback) => {
     if (logCallback)
       logCallback("[СИСТЕМА] Очистка настроек прокси Linux...", "info");
@@ -165,7 +168,19 @@ module.exports = {
     });
   },
 
-  // 5. Kill Switch (мертвый порт)
+  // 5. ЖЕСТКАЯ СИНХРОННАЯ ОЧИСТКА (ДЛЯ ВЫКЛЮЧЕНИЯ ПК)
+  disableSystemProxySync: () => {
+    try {
+      // execSync блокирует выполнение до успешного снятия прокси из системы
+      execSync(`gsettings set org.gnome.system.proxy mode 'none'`, {
+        stdio: "ignore",
+      });
+    } catch (e) {
+      // Игнорируем ошибку, чтобы не помешать процессу закрытия
+    }
+  },
+
+  // 6. Kill Switch (мертвый порт)
   applyKillSwitch: async (logCallback) => {
     if (logCallback)
       logCallback(
@@ -184,7 +199,7 @@ module.exports = {
     });
   },
 
-  // 6. Проверка процесса (lsof)
+  // 7. Проверка процесса (lsof)
   checkAppWhitelist: async (
     remotePort,
     appWhitelist,

@@ -1,4 +1,4 @@
-const { exec } = require("child_process");
+const { exec, execSync } = require("child_process");
 
 // Локальный кэш процессов для быстродействия белых списков
 let processTreeCache = {};
@@ -9,6 +9,7 @@ async function getProcessInfo(pid) {
   return new Promise((resolve) => {
     exec(
       `wmic process where processid=${pid} get Name,ParentProcessId`,
+      { maxBuffer: 1024 * 1024 * 50 },
       (err, out) => {
         if (!err && out) {
           const lines = out
@@ -25,15 +26,19 @@ async function getProcessInfo(pid) {
             }
           }
         }
-        exec(`tasklist /fi "PID eq ${pid}" /fo csv /nh`, (err2, out2) => {
-          if (!err2 && out2 && out2.includes(pid.toString())) {
-            const match = out2.match(/"([^"]+)"/);
-            if (match) {
-              return resolve({ name: match[1].toLowerCase(), ppid: "0" });
+        exec(
+          `tasklist /fi "PID eq ${pid}" /fo csv /nh`,
+          { maxBuffer: 1024 * 1024 * 50 },
+          (err2, out2) => {
+            if (!err2 && out2 && out2.includes(pid.toString())) {
+              const match = out2.match(/"([^"]+)"/);
+              if (match) {
+                return resolve({ name: match[1].toLowerCase(), ppid: "0" });
+              }
             }
-          }
-          resolve(null);
-        });
+            resolve(null);
+          },
+        );
       },
     );
   });
@@ -53,6 +58,7 @@ module.exports = {
         isCaching = true;
         exec(
           "wmic process get Name,ParentProcessId,ProcessId",
+          { maxBuffer: 1024 * 1024 * 50 },
           (err, stdout) => {
             isCaching = false;
             if (!err && stdout) {
@@ -132,7 +138,7 @@ module.exports = {
     });
   },
 
-  // 4. Очистка прокси из системы
+  // 4. Очистка прокси из системы (Асинхронно, для обычной работы)
   disableSystemProxy: (logCallback) => {
     return new Promise((resolve) => {
       if (logCallback)
@@ -145,7 +151,28 @@ module.exports = {
     });
   },
 
-  // 5. Жесткая блокировка интернета
+  // 5. ЖЕСТКАЯ СИНХРОННАЯ ОЧИСТКА (Вызывается только при завершении работы/выключении ПК)
+  disableSystemProxySync: () => {
+    try {
+      // execSync блокирует поток, заставляя ОС дождаться выполнения очистки реестра перед "смертью" процесса
+      execSync(
+        'reg add "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyEnable /t REG_DWORD /d 0 /f',
+        { stdio: "ignore" },
+      );
+      execSync(
+        'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer /f 2>nul',
+        { stdio: "ignore" },
+      );
+      execSync(
+        'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyOverride /f 2>nul',
+        { stdio: "ignore" },
+      );
+    } catch (e) {
+      // Игнорируем ошибки (например, если ключа и так нет), чтобы не крашить завершение работы
+    }
+  },
+
+  // 6. Жесткая блокировка интернета (Kill Switch)
   applyKillSwitch: (logCallback) => {
     return new Promise((resolve) => {
       if (logCallback)
@@ -158,7 +185,7 @@ module.exports = {
     });
   },
 
-  // 6. Проверка процесса по белому списку EXE
+  // 7. Проверка процесса по белому списку EXE
   checkAppWhitelist: async (
     remotePort,
     appWhitelist,
@@ -168,73 +195,77 @@ module.exports = {
     if (!appWhitelist || appWhitelist.length === 0 || !remotePort) return false;
 
     return new Promise((resolve) => {
-      exec(`netstat -ano | findstr ":${remotePort}"`, async (err, stdout) => {
-        if (err || !stdout) return resolve(false);
+      exec(
+        `netstat -ano | findstr ":${remotePort}"`,
+        { maxBuffer: 1024 * 1024 * 50 },
+        async (err, stdout) => {
+          if (err || !stdout) return resolve(false);
 
-        const lines = stdout.trim().split(/\r?\n/);
-        let pid = null;
-        for (let line of lines) {
-          const parts = line.trim().split(/\s+/).filter(Boolean);
-          if (parts.length >= 4) {
-            let currentPid = parts[parts.length - 1];
-            let localAddr = parts[1];
-            if (localAddr.endsWith(`:${remotePort}`)) {
-              pid = currentPid;
-              break;
+          const lines = stdout.trim().split(/\r?\n/);
+          let pid = null;
+          for (let line of lines) {
+            const parts = line.trim().split(/\s+/).filter(Boolean);
+            if (parts.length >= 4) {
+              let currentPid = parts[parts.length - 1];
+              let localAddr = parts[1];
+              if (localAddr.endsWith(`:${remotePort}`)) {
+                pid = currentPid;
+                break;
+              }
             }
           }
-        }
 
-        if (!pid || isNaN(pid) || pid === "0") return resolve(false);
+          if (!pid || isNaN(pid) || pid === "0") return resolve(false);
 
-        let currentPid = pid;
-        let foundAppName = false;
-        let depth = 0;
-        let chain = [];
+          let currentPid = pid;
+          let foundAppName = false;
+          let depth = 0;
+          let chain = [];
 
-        while (currentPid && currentPid !== "0" && depth < 10) {
-          let info = processTreeCache[currentPid];
-          if (!info) {
-            info = await getProcessInfo(currentPid);
-            if (info) processTreeCache[currentPid] = info;
-          }
-          if (!info) break;
+          while (currentPid && currentPid !== "0" && depth < 10) {
+            let info = processTreeCache[currentPid];
+            if (!info) {
+              info = await getProcessInfo(currentPid);
+              if (info) processTreeCache[currentPid] = info;
+            }
+            if (!info) break;
 
-          chain.push(info.name);
+            chain.push(info.name);
 
-          const matchedApp = appWhitelist.find(
-            (app) =>
-              info.name === app.toLowerCase() ||
-              info.name.includes(app.toLowerCase()),
-          );
-          if (matchedApp) {
-            foundAppName = info.name;
-            break;
-          }
-          currentPid = info.ppid;
-          depth++;
-        }
-
-        if (foundAppName) {
-          if (logCallback)
-            logCallback(
-              `[БЕЛЫЙ СПИСОК EXE] Пропуск напрямую: ${targetHost} (Цепочка: ${chain.join(" <- ")})`,
-              "warning",
+            const matchedApp = appWhitelist.find(
+              (app) =>
+                info.name === app.toLowerCase() ||
+                info.name.includes(app.toLowerCase()),
             );
-        } else {
-          const chainStr =
-            chain.length > 0
-              ? chain.join(" <- ")
-              : `PID:${pid} (Системный/Защищенный процесс)`;
-          if (logCallback)
-            logCallback(
-              `[EXE DEBUG] ${targetHost} (Процесс: ${chainStr}) не в белом списке. Идет в прокси.`,
-              "info",
-            );
-        }
+            if (matchedApp) {
+              foundAppName = info.name;
+              break;
+            }
+            currentPid = info.ppid;
+            depth++;
+          }
 
-        resolve(foundAppName);
-      });
+          if (foundAppName) {
+            if (logCallback)
+              logCallback(
+                `[БЕЛЫЙ СПИСОК EXE] Пропуск напрямую: ${targetHost} (Цепочка: ${chain.join(" <- ")})`,
+                "warning",
+              );
+          } else {
+            const chainStr =
+              chain.length > 0
+                ? chain.join(" <- ")
+                : `PID:${pid} (Системный/Защищенный процесс)`;
+            if (logCallback)
+              logCallback(
+                `[EXE DEBUG] ${targetHost} (Процесс: ${chainStr}) не в белом списке. Идет в прокси.`,
+                "info",
+              );
+          }
+
+          resolve(foundAppName);
+        },
+      );
     });
   },
 };
