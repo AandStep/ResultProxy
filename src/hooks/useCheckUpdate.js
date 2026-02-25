@@ -22,7 +22,9 @@ export const useCheckUpdate = () => {
         const localVersion = localData.version;
         setCurrentVersion(localVersion);
 
-        const remoteResponse = await fetch(UPDATE_URL);
+        // Добавляем timestamp для обхода жесткого кэша GitHub Raw (до 5 минут)
+        const cacheBuster = `?_t=${Date.now()}`;
+        const remoteResponse = await fetch(`${UPDATE_URL}${cacheBuster}`);
         const remoteData = await remoteResponse.json();
 
         setLatestVersionData(remoteData);
