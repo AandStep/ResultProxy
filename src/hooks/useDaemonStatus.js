@@ -74,7 +74,7 @@ export const useDaemonStatus = (
     };
 
     fetchStatus();
-    interval = setInterval(fetchStatus, 2000);
+    interval = setInterval(fetchStatus, 1000);
     return () => clearInterval(interval);
   }, [
     isConnected,
