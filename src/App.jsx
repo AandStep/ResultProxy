@@ -3,6 +3,7 @@ import { AppProvider } from "./context/AppContext";
 import { MainLayout } from "./components/layout/MainLayout";
 import { HomeView } from "./views/HomeView";
 import { ProxyListView } from "./views/ProxyListView";
+import { VlessListView } from "./views/VlessListView";
 import { RulesView } from "./views/RulesView";
 import { AddProxyView } from "./views/AddProxyView";
 import { BuyProxyView } from "./views/BuyProxyView";
@@ -10,6 +11,7 @@ import { LogsView } from "./views/LogsView";
 import { SettingsView } from "./views/SettingsView";
 import { formatBytes, formatSpeed } from "./utils/formatters";
 import { useConfigContext } from "./context/ConfigContext";
+import { SubscriptionProvider } from "./context/SubscriptionContext";
 import logo from "./assets/logo.png";
 import { useTranslation } from "react-i18next";
 import { useCheckUpdate } from "./hooks/useCheckUpdate";
@@ -52,6 +54,7 @@ const AppContent = () => {
     <MainLayout>
       {activeTab === "home" && <HomeView />}
       {activeTab === "list" && <ProxyListView />}
+      {activeTab === "vlesslist" && <VlessListView />}
       {activeTab === "rules" && <RulesView />}
       {activeTab === "add" && <AddProxyView />}
       {activeTab === "buy" && <BuyProxyView />}
@@ -73,7 +76,9 @@ const AppContent = () => {
 export default function App() {
   return (
     <AppProvider>
-      <AppContent />
+      <SubscriptionProvider>
+        <AppContent />
+      </SubscriptionProvider>
     </AppProvider>
   );
 }

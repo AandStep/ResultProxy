@@ -9,6 +9,14 @@ export const ConfigProvider = ({ children }) => {
   const config = useAppConfig(addLog);
   const [activeTab, setActiveTab] = useState("home");
   const [editingProxy, setEditingProxy] = useState(null);
+  const [connectionMode, setConnectionMode] = useState(() => {
+    return localStorage.getItem("connectionMode") || "proxy";
+  });
+
+  // Persist connectionMode
+  React.useEffect(() => {
+    localStorage.setItem("connectionMode", connectionMode);
+  }, [connectionMode]);
 
   const value = {
     ...config,
@@ -16,6 +24,8 @@ export const ConfigProvider = ({ children }) => {
     setActiveTab,
     editingProxy,
     setEditingProxy,
+    connectionMode,
+    setConnectionMode,
   };
 
   return (

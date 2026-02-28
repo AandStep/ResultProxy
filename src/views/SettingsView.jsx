@@ -155,6 +155,33 @@ export const SettingsView = () => {
           isOn={settings.killswitch}
           onToggle={() => updateSetting("killswitch", !settings.killswitch)}
         />
+
+        <div className="bg-zinc-900 rounded-3xl p-6 border border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h3 className="text-white font-bold text-lg">{t("settings.vpnMode.title", "VPN Core")}</h3>
+            <p className="text-zinc-500 text-sm mt-1">{t("settings.vpnMode.desc", "Select the core engine used for VLESS connections.")}</p>
+          </div>
+          <div className="flex bg-zinc-950 p-1 rounded-xl border border-zinc-800 shrink-0">
+            <button
+              onClick={() => updateSetting("vpnMode", "xray")}
+              className={`py-2 px-6 rounded-lg text-sm font-bold transition-colors outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${(!settings.vpnMode || settings.vpnMode === "xray")
+                  ? "bg-[#007E3A] text-white shadow-md"
+                  : "text-zinc-500 hover:text-white hover:bg-zinc-800/50"
+                }`}
+            >
+              Xray
+            </button>
+            <button
+              onClick={() => updateSetting("vpnMode", "singbox")}
+              className={`py-2 px-6 rounded-lg text-sm font-bold transition-colors outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${settings.vpnMode === "singbox"
+                  ? "bg-[#007E3A] text-white shadow-md"
+                  : "text-zinc-500 hover:text-white hover:bg-zinc-800/50"
+                }`}
+            >
+              Sing-box
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="p-8 bg-zinc-900 rounded-3xl border border-zinc-800 mt-10">

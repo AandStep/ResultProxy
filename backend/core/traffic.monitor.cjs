@@ -41,8 +41,9 @@ class TrafficMonitor {
 
     this.trafficIntervalId = setInterval(async () => {
       const state = this.stateStore.getState();
+      const isActive = state.isConnected || state.isVlessActive;
 
-      if (state.isConnected) {
+      if (isActive) {
         const now = Date.now();
         const currentStats = await this.systemAdapter.getNetworkTraffic();
         const timeDiff = (now - state.lastTickStats.time) / 1000;

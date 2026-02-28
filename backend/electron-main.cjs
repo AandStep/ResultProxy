@@ -25,6 +25,10 @@ const TrafficMonitor = require("./core/traffic.monitor.cjs");
 const ApiServer = require("./api/express.server.cjs");
 const WindowManager = require("./electron/window.manager.cjs");
 const TrayManager = require("./electron/tray.manager.cjs");
+const subscriptionParser = require("./api/subscription.parser.cjs");
+const pingManager = require("./api/ping.manager.cjs");
+const xrayManager = require("./core/xray.manager.cjs");
+const singboxManager = require("./core/singbox.manager.cjs");
 
 // ---------------------------------------------------------
 // 2. Инициализация (Сборка приложения)
@@ -66,6 +70,79 @@ const apiServer = new ApiServer(
 
 ipcMain.on("get-api-token", (event) => {
   event.returnValue = authManager.getToken();
+});
+
+ipcMain.handle("parse-subscription", async (event, input) => {
+  try {
+    const nodes = await subscriptionParser.processInput(input);
+    return { success: true, nodes };
+  } catch (e) {
+    loggerService.log(`Parse sub error: ${e.message}`, "error");
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("ping-nodes", async (event, nodes) => {
+  try {
+    const results = await pingManager.pingNodes(nodes);
+    return { success: true, results };
+  } catch (e) {
+    loggerService.log(`Ping error: ${e.message}`, "error");
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("start-vless", async (event, payload) => {
+  try {
+    const node = payload.node || payload;
+    const rules = payload.rules || { whitelist: [] };
+    loggerService.log(`Starting VLESS node: ${node.name}`, "info");
+
+    const stats = await systemAdapter.getNetworkTraffic();
+    const sessionStartStats = {
+      received: stats.received || 0,
+      sent: stats.sent || 0,
+    };
+    stateStore.update({
+      sessionStartStats,
+      lastTickStats: { ...sessionStartStats, time: Date.now() },
+      bytesReceived: 0,
+      bytesSent: 0,
+    });
+
+    const config = configManager.getConfig();
+    const vpnMode = config?.settings?.vpnMode || "xray";
+
+    if (vpnMode === "singbox") {
+      loggerService.log(`Using Sing-box core`, "info");
+      await singboxManager.start(node, 10808);
+    } else {
+      loggerService.log(`Using Xray core`, "info");
+      await xrayManager.start(node, 10808);
+    }
+
+    // Proxy is created on 10808. We tell the system to use it.
+    await systemAdapter.setSystemProxy("127.0.0.1", 10808, "SOCKS5", rules.whitelist, loggerService.log.bind(loggerService));
+    stateStore.update({ isVlessActive: true, activeNode: node, proxyType: 'vless' });
+    return { success: true };
+  } catch (e) {
+    loggerService.log(`Failed to start VLESS: ${e.message}`, "error");
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle("stop-vless", async (event) => {
+  try {
+    loggerService.log(`Stopping VLESS node`, "info");
+    await xrayManager.stop();
+    await singboxManager.stop();
+    stateStore.update({ isVlessActive: false, activeNode: null, proxyType: null });
+    await systemAdapter.disableSystemProxy();
+    return { success: true };
+  } catch (e) {
+    loggerService.log(`Failed to stop VLESS: ${e.message}`, "error");
+    return { success: false, error: e.message };
+  }
 });
 
 app.on("second-instance", () => {
@@ -130,4 +207,6 @@ app.on("before-quit", async () => {
 
   // Принудительно гасим серверы
   await proxyManager.setSystemProxy(false);
+  await xrayManager.stop();
+  await singboxManager.stop();
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, ShoppingCart, Plus, List, Settings } from "lucide-react";
+import { Activity, ShoppingCart, Plus, List, Settings, Globe } from "lucide-react";
 import { useConfigContext } from "../../context/ConfigContext";
 import { Sidebar } from "./Sidebar";
 import { MobileHeader } from "./MobileHeader";
@@ -7,9 +7,8 @@ import { MobileHeader } from "./MobileHeader";
 const MobileNavItem = ({ icon, label, isActive, onClick }) => (
   <button
     onClick={onClick}
-    className={`flex flex-col items-center p-2 min-w-[64px] border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${
-      isActive ? "text-[#007E3A]" : "text-zinc-500 hover:text-[#00A819]"
-    }`}
+    className={`flex flex-col items-center p-2 min-w-[64px] border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive ? "text-[#007E3A]" : "text-zinc-500 hover:text-[#00A819]"
+      }`}
   >
     {React.cloneElement(icon, { className: "w-6 h-6 mb-1" })}
     <span className="text-[10px] font-medium">{label}</span>

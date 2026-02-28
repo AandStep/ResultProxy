@@ -37,6 +37,10 @@ export const useDaemonControl = (
         addLog(`Подключение к ${targetProxy.name}...`, "info");
         setActiveProxy(targetProxy);
 
+        try {
+          await window.electronApiexec?.invoke('stop-vless') || window.electronAPI?.invoke('stop-vless');
+        } catch (ignore) { }
+
         const res = await apiFetch(`/api/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -94,6 +98,10 @@ export const useDaemonControl = (
           setIsConnected(false);
         }
 
+        try {
+          await window.electronApiexec?.invoke('stop-vless') || window.electronAPI?.invoke('stop-vless');
+        } catch (ignore) { }
+
         const res = await apiFetch(`/api/connect`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -146,7 +154,7 @@ export const useDaemonControl = (
           try {
             await apiFetch(`/api/disconnect`, { method: "POST" });
             addLog("Отключено успешно.", "success");
-          } catch (e) {}
+          } catch (e) { }
           setIsConnected(false);
           setActiveProxy(null);
           setTimeout(() => {

@@ -6,6 +6,7 @@ import {
   List,
   Split,
   Terminal,
+  Globe,
   Settings,
 } from "lucide-react";
 import { useConfigContext } from "../../context/ConfigContext";
@@ -17,11 +18,10 @@ import { LanguageSwitcher } from "../ui/LanguageSwitcher";
 const NavItem = ({ icon, label, isActive, onClick }) => (
   <button
     onClick={onClick}
-    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${
-      isActive
-        ? "bg-[#007E3A]/10 text-[#007E3A]"
-        : "text-zinc-400 hover:bg-zinc-800 hover:text-[#00A819]"
-    }`}
+    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-colors border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive
+      ? "bg-[#007E3A]/10 text-[#007E3A]"
+      : "text-zinc-400 hover:bg-zinc-800 hover:text-[#00A819]"
+      }`}
   >
     {React.cloneElement(icon, { className: "w-5 h-5" })}
     <span className="font-medium">{label}</span>
@@ -79,6 +79,12 @@ export const Sidebar = () => {
             label={t("sidebar.list")}
             isActive={activeTab === "list"}
             onClick={() => setActiveTab("list")}
+          />
+          <NavItem
+            icon={<Globe />}
+            label="VLESS"
+            isActive={activeTab === "vlesslist"}
+            onClick={() => setActiveTab("vlesslist")}
           />
           <NavItem
             icon={<Split />}
