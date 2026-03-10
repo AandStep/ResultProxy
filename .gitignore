@@ -12,7 +12,6 @@ dist
 dist-ssr
 *.local
 release
-TECHNICAL_DOCUMENTATION.md
 
 # Editor directories and files
 .vscode/*
@@ -23,4 +22,7 @@ TECHNICAL_DOCUMENTATION.md
 *.ntvs*
 *.njsproj
 *.sln
-*.sw?
+
+
+# Claude Superpowers
+superpowers/

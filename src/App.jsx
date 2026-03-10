@@ -14,10 +14,12 @@ import logo from "./assets/logo.png";
 import { useTranslation } from "react-i18next";
 import { useCheckUpdate } from "./hooks/useCheckUpdate";
 import UpdateNotificationModal from "./components/ui/UpdateNotificationModal";
+import ProtocolWarningModal from "./components/ui/ProtocolWarningModal";
 
 const AppContent = () => {
   const { t } = useTranslation();
-  const { isConfigLoaded, activeTab } = useConfigContext();
+  const { isConfigLoaded, activeTab, showProtocolModal, setShowProtocolModal } =
+    useConfigContext();
   const { updateAvailable, latestVersionData, currentVersion } =
     useCheckUpdate();
 
@@ -66,6 +68,11 @@ const AppContent = () => {
           onClose={handleDismissUpdate}
         />
       )}
+
+      <ProtocolWarningModal
+        isOpen={showProtocolModal}
+        onClose={() => setShowProtocolModal(false)}
+      />
     </MainLayout>
   );
 };

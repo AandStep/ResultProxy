@@ -381,14 +381,58 @@ class ApiServer {
       }
     });
 
-    this.app.post("/api/autostart", (req, res) => {
+    this.app.post("/api/autostart", async (req, res) => {
       try {
-        app.setLoginItemSettings({
-          openAtLogin: req.body.enable,
-          path: process.execPath,
-        });
+        const enable = !!req.body.enable;
+        const isDev = !app.isPackaged;
+        const args = ["--hidden"];
+
+        // В режиме разработки нам нужно передать путь к скрипту как первый аргумент
+        if (isDev) {
+          args.unshift(process.argv[1]); // обычно это backend/electron-main.cjs
+        }
+
+        if (process.platform === "win32") {
+          // На Windows используем Планировщик Задач для обхода UAC/RunAsAdmin
+          if (enable) {
+            try {
+              await this.systemAdapter.enableTaskAutostart(
+                process.execPath,
+                args,
+              );
+            } catch (e) {
+              this.logger.log(
+                `Ошибка создания задачи в Планировщике: ${e.message}`,
+                "error",
+              );
+              const needsAdmin = e.message.includes("права администратора");
+              return res.status(500).json({
+                error: `Ошибка планировщика: ${e.message}`,
+                needsAdmin,
+              });
+            }
+          } else {
+            await this.systemAdapter.disableTaskAutostart();
+          }
+
+          // Для надежности также ставим обычный loginItem
+          app.setLoginItemSettings({
+            openAtLogin: enable,
+            path: process.execPath,
+            args: args,
+          });
+        } else {
+          // На других ОС используем стандартный механизм
+          app.setLoginItemSettings({
+            openAtLogin: enable,
+            path: process.execPath,
+            args: args,
+          });
+        }
+
         res.status(200).json({ success: true });
       } catch (err) {
+        this.logger.log(`Ошибка настройки автостарта: ${err.message}`, "error");
         res.status(500).json({ error: err.message });
       }
     });

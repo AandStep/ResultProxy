@@ -1,4 +1,6 @@
 const BaseProxyManager = require("./BaseProxyManager.cjs");
+const { getSafeOSWhitelist } = require("../../utils/domain.cjs");
+
 const util = require("util");
 const { execFile, execSync } = require("child_process");
 const execFileAsync = util.promisify(execFile);
@@ -9,7 +11,8 @@ class WindowsProxy extends BaseProxyManager {
   formatBypassList(whitelist) {
     let override = "<local>";
     if (whitelist && whitelist.length > 0) {
-      const bypassStr = whitelist.map((d) => `*.${d};*${d}*`).join(";");
+      const safeList = getSafeOSWhitelist(whitelist);
+      const bypassStr = safeList.map((d) => `*.${d};*${d}*`).join(";");
       override = `${bypassStr};<local>`;
     }
     return override;

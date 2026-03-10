@@ -1,4 +1,5 @@
 const { exec, execSync } = require("child_process");
+const { getSafeOSWhitelist } = require("../utils/domain.cjs");
 
 // Локальный кэш процессов для быстродействия белых списков
 let processTreeCache = {};
@@ -120,7 +121,8 @@ module.exports = {
 
       let override = "<local>";
       if (whitelist && whitelist.length > 0) {
-        const bypassStr = whitelist.map((d) => `*.${d};*${d}*`).join(";");
+        const safeList = getSafeOSWhitelist(whitelist);
+        const bypassStr = safeList.map((d) => `*.${d};*${d}*`).join(";");
         override = `${bypassStr};<local>`;
       }
 
@@ -289,6 +291,53 @@ module.exports = {
         if (err) {
           console.error(
             `[СИСТЕМА] Ошибка при установке флага RUNASADMIN: ${err.message}`,
+          );
+        }
+        resolve();
+      });
+    });
+  },
+
+  // 9. Работа с планировщиком задач (schtasks) для автостарта с админ-правами
+  enableTaskAutostart: (exePath, args = []) => {
+    return new Promise((resolve, reject) => {
+      const taskName = "ResultProxyAutostart";
+      const argsStr = args.length > 0 ? ` ${args.join(" ")}` : "";
+
+      // Проверка на права администратора перед созданием задачи
+      try {
+        execSync("net session", { stdio: "ignore" });
+      } catch (e) {
+        return reject(
+          new Error(
+            "Требуются права администратора для создания задачи в планировщике.",
+          ),
+        );
+      }
+
+      // Мы используем schtasks для создания задачи, которая запускается при входе пользователя
+      // Используем двойные кавычки для пути к EXE, экранируя их для cmd
+      const taskCmd = `\\"${exePath.replace(/\//g, "\\")}\\"${argsStr}`;
+      const command = `schtasks /create /tn "${taskName}" /tr "${taskCmd}" /sc ONLOGON /rl HIGHEST /f`;
+
+      exec(command, (err, stdout, stderr) => {
+        if (err) {
+          console.error(`[СИСТЕМА] Ошибка создания задачи schtasks: ${stderr}`);
+          return reject(new Error(stderr || err.message));
+        }
+        console.log(`[СИСТЕМА] Задача автостарта успешно создана: ${stdout}`);
+        resolve();
+      });
+    });
+  },
+
+  disableTaskAutostart: () => {
+    return new Promise((resolve) => {
+      const taskName = "ResultProxyAutostart";
+      exec(`schtasks /delete /tn "${taskName}" /f`, (err) => {
+        if (err) {
+          console.warn(
+            `[СИСТЕМА] Не удалось удалить задачу автостарта (возможно, ее нет).`,
           );
         }
         resolve();

@@ -6,7 +6,7 @@ class WindowManager {
     this.mainWindow = null;
   }
 
-  create() {
+  create(show = true) {
     const isDev = process.env.NODE_ENV === "development";
     const iconPath = isDev
       ? path.join(__dirname, "../../public", "logo.png")
@@ -17,6 +17,7 @@ class WindowManager {
       height: 780,
       icon: nativeImage.createFromPath(iconPath),
       autoHideMenuBar: true,
+      show: show,
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,

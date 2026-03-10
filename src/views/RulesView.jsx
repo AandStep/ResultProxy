@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, HelpCircle } from "lucide-react";
 import { useConfigContext } from "../context/ConfigContext";
 import { useTranslation } from "react-i18next";
 
@@ -108,9 +108,18 @@ export const RulesView = () => {
       </div>
 
       <div className="bg-zinc-900 p-8 rounded-3xl border border-zinc-800 mt-6">
-        <h3 className="text-white font-bold text-lg mb-2">
-          {t("rules.domains.title")}
-        </h3>
+        <div className="flex items-center space-x-2 mb-2">
+          <h3 className="text-white font-bold text-lg">
+            {t("rules.domains.title")}
+          </h3>
+          <div className="relative group">
+            <HelpCircle className="w-5 h-5 text-zinc-500 hover:text-zinc-300 cursor-help transition-colors" />
+            <div className="absolute bottom-full left-0 mb-2 px-3 py-2 bg-zinc-800 text-zinc-200 text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-64 z-10 border border-zinc-700 shadow-xl">
+              {t("rules.domains.tooltip")}
+            </div>
+          </div>
+        </div>
+
         <p className="text-zinc-500 text-sm mb-6">{t("rules.domains.desc")}</p>
         <div className="flex space-x-3 mb-6">
           <input

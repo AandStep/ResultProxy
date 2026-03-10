@@ -239,8 +239,30 @@ app.whenReady().then(async () => {
   // 2. Запускаем сборщик процессов для белого списка
   systemAdapter.startProcessCacheInterval(() => stateStore.getState());
 
-  // 3. Стартуем слои
-  windowManager.create();
+  // 3. Синхронизируем автостарт (Windows schtasks)
+  if (
+    process.platform === "win32" &&
+    config?.settings?.autostart &&
+    typeof systemAdapter.enableTaskAutostart === "function"
+  ) {
+    const isDev = !app.isPackaged;
+    const args = ["--hidden"];
+    if (isDev) args.unshift(process.argv[1]);
+
+    systemAdapter
+      .enableTaskAutostart(process.execPath, args)
+      .then(() => loggerService.log("Автостарт синхронизирован.", "success"))
+      .catch((e) =>
+        loggerService.log(
+          `Ошибка синхронизации автостарта: ${e.message}`,
+          "info",
+        ),
+      );
+  }
+
+  // 4. Стартуем слои
+  const isHidden = process.argv.includes("--hidden");
+  windowManager.create(!isHidden);
   trayManager.init();
   apiServer.start();
   trafficMonitor.start();

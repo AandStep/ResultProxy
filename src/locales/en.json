@@ -51,7 +51,22 @@
     "cancel": "Cancel",
     "saveProxy": "Save Proxy",
     "saveChanges": "Save Changes",
-    "newServer": "New Server"
+    "newServer": "New Server",
+    "fromFile": "From File",
+    "fromClipboard": "From Clipboard",
+    "bulkInputLabel": "Bulk proxy input (CSV or IP:Port:User:Pass)",
+    "backToSingle": "Back to form",
+    "importing": "Importing...",
+    "importProxies": "Add Proxies",
+    "noProxiesFound": "No proxies found",
+    "clipboardEmpty": "Clipboard is empty",
+    "clipboardError": "Could not read clipboard. Paste manually.",
+    "protocolWarningTitle": "Important Clarification",
+    "protocolWarning": "Make sure you selected the correct proxy protocols (HTTP(S) or SOCKS5), as specified by your provider",
+    "protocolSelectionTitle": "Select Protocol",
+    "protocolSelectionDesc": "All imported proxies will be added with the selected protocol. If individual proxies use different protocols, you'll need to change them manually after import.",
+    "confirmImport": "Add {{count}} proxies",
+    "gotIt": "Got it"
   },
   "settings": {
     "title": "Application Settings",
@@ -103,8 +118,10 @@
       "desc": "Sites from this list will always connect directly, without a proxy. Changes apply instantly.",
       "placeholder": "E.g.: proxy.com",
       "add_btn": "Add",
-      "fast_add": "Quickly add domains to exceptions:"
+      "fast_add": "Quickly add domains to exceptions:",
+      "tooltip": "If the list contains a general mask (e.g., .ru) and a specific domain (e.g., avito.ru), the specific domain will be proxied (acting as an exception to the exclusion rule)."
     },
+
     "apps": {
       "title": "Exception Applications",
       "desc1": "Traffic from these apps will connect directly. ",
@@ -168,12 +185,19 @@
   },
   "buy": {
     "title": "Buy Proxies",
-    "desc": "Reliable IPv4 and IPv6 proxies for any tasks",
-    "discount": "5% discount from PROXY6.net",
-    "discount_desc": "Register on PROXY6.net using the link below to get a 5% discount on proxies.",
+    "desc": "Reliable IPv4 and IPv6 proxies for any tasks from our partners",
+    "proxy6": {
+      "discount": "5% discount from PROXY6.net",
+      "discount_desc": "Register on PROXY6.net using the link below to get a 5% discount on proxies.",
+      "promo_title": "5% Promo Code"
+    },
+    "proxy_market": {
+      "discount": "5% discount from proxy market",
+      "discount_desc": "Register on proxy market using the link below to get a 5% discount on proxies.",
+      "promo_title": "5% Promo Code"
+    },
     "copied": "Copied!",
     "go": "Go to Site",
-    "promo_title": "5% Promo Code",
     "copy": "Copy"
   },
   "app": {

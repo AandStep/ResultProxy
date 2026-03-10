@@ -1,4 +1,6 @@
 const BaseProxyManager = require("./BaseProxyManager.cjs");
+const { getSafeOSWhitelist } = require("../../utils/domain.cjs");
+
 const util = require("util");
 const { execFile, execSync } = require("child_process");
 const execFileAsync = util.promisify(execFile);
@@ -10,7 +12,8 @@ class LinuxProxy extends BaseProxyManager {
   formatBypassList(whitelist) {
     let bypassArray = ["'localhost'", "'127.0.0.0/8'", "'::1'"];
     if (whitelist && whitelist.length > 0) {
-      whitelist.forEach((domain) => {
+      const safeList = getSafeOSWhitelist(whitelist);
+      safeList.forEach((domain) => {
         const clean = domain.replace(/\*/g, "");
         bypassArray.push(`'${clean}'`);
       });

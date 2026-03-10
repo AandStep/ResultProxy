@@ -14,6 +14,7 @@ export const useAppConfig = (addLog) => {
     autostart: false,
     killswitch: false,
   });
+  const [showProtocolModal, setShowProtocolModal] = useState(false);
   const [platform, setPlatform] = useState("win32");
 
   useEffect(() => {
@@ -82,7 +83,24 @@ export const useAppConfig = (addLog) => {
         body: JSON.stringify({ enable: value }),
       })
         .then(async (res) => {
-          if (key === "killswitch" && value && res.ok) {
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            if (key === "autostart") {
+              setSettings((prev) => ({ ...prev, autostart: !value }));
+              alert(
+                `Ошибка настройки автостарта:\n\n${data.error || "Неизвестная ошибка"}`,
+              );
+
+              if (data.needsAdmin && window.electronAPI?.restartAsAdmin) {
+                const restart = window.confirm(
+                  "Для настройки автостарта с правами администратора требуется перезапуск. Перезапустить сейчас?",
+                );
+                if (restart) window.electronAPI.restartAsAdmin();
+              }
+            }
+            return;
+          }
+          if (key === "killswitch" && value) {
             const data = await res.json().catch(() => ({}));
             if (data.needsAdmin && window.electronAPI?.restartAsAdmin) {
               const restart = window.confirm(
@@ -94,7 +112,11 @@ export const useAppConfig = (addLog) => {
             }
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          if (key === "autostart") {
+            setSettings((prev) => ({ ...prev, autostart: !value }));
+          }
+        });
     }
   }, []);
 
@@ -154,6 +176,28 @@ export const useAppConfig = (addLog) => {
     [addLog],
   );
 
+  const handleBulkSaveProxies = useCallback(
+    async (proxiesData, setActiveTab, defaultProtocol) => {
+      const now = Date.now();
+      const finalProxies = await Promise.all(
+        proxiesData.map(async (p, index) => {
+          const countryCode = await detectCountry(p.ip);
+          return {
+            ...p,
+            id: now + index,
+            country: countryCode,
+            type: defaultProtocol || p.type || "HTTP",
+          };
+        }),
+      );
+
+      setProxies((prev) => [...prev, ...finalProxies]);
+      addLog(`Добавлено ${finalProxies.length} новых прокси.`, "success");
+      setActiveTab("list");
+    },
+    [addLog],
+  );
+
   return {
     isConfigLoaded,
     proxies,
@@ -164,6 +208,9 @@ export const useAppConfig = (addLog) => {
     setSettings,
     updateSetting,
     handleSaveProxy,
+    handleBulkSaveProxies,
+    showProtocolModal,
+    setShowProtocolModal,
     platform,
   };
 };

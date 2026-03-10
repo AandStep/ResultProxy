@@ -1,4 +1,5 @@
 const ProxyChain = require("proxy-chain");
+const { isWhitelisted } = require("../utils/domain.cjs");
 
 const BLOCKED_RESOURCES = [
   "instagram.com",
@@ -57,19 +58,50 @@ class HttpServer {
           }
         }
 
-        if (currentRules.whitelist && currentRules.whitelist.length > 0) {
-          if (currentRules.whitelist.some((d) => hostname.includes(d))) {
-            return { requestAuthentication: false };
-          }
-        }
+        const { isWhitelisted: isBypass, matchingRules } = isWhitelisted(
+          hostname,
+          currentRules.whitelist,
+        );
+        const isBlocked = BLOCKED_RESOURCES.some((d) => hostname.includes(d));
+
+        let useProxy = false;
+        let reason = "";
 
         if (currentRules.mode === "smart") {
-          if (!BLOCKED_RESOURCES.some((d) => hostname.includes(d))) {
-            return { requestAuthentication: false };
+          if (!isBypass && matchingRules.length > 0) {
+            useProxy = true;
+            reason = `Nested exception found: [${matchingRules.join(", ")}]`;
+          } else if (isBypass) {
+            useProxy = isBlocked;
+            reason = isBlocked
+              ? "Blocked resource in Smart mode"
+              : "Bypass (Whitelisted)";
+          } else {
+            useProxy = isBlocked;
+            reason = isBlocked
+              ? "Blocked resource (No match)"
+              : "Direct (Not blocked)";
           }
+        } else {
+          useProxy = !isBypass;
+          reason = isBypass
+            ? "Whitelisted (Bypass)"
+            : "Not whitelisted (Proxy)";
         }
 
-        this.logger.log(`[ПРОКСИ] ${hostname} -> ${proxyConfig.ip}`, "success");
+        if (!useProxy) {
+          // Silent for bypasses to avoid log spam, but help debug if reasoning is complex
+          if (matchingRules.length > 1) {
+            this.logger.log(`[МОСТ] BYPASS: ${hostname} (${reason})`, "info");
+          }
+          return { requestAuthentication: false };
+        }
+
+        this.logger.log(
+          `[ПРОКСИ] ${hostname} -> ${proxyConfig.ip} (${reason})`,
+          "success",
+        );
+
         return {
           requestAuthentication: false,
           upstreamProxyUrl: upstreamUrl,

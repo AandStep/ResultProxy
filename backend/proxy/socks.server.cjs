@@ -1,5 +1,6 @@
 const net = require("net");
 const { SocksClient } = require("socks");
+const { isWhitelisted } = require("../utils/domain.cjs");
 
 const BLOCKED_RESOURCES = [
   "instagram.com",
@@ -209,21 +210,51 @@ class SocksServer {
                 }
               }
 
-              const isWhitelisted =
+              const isWhitelistedDomain =
                 currentRules.whitelist &&
-                currentRules.whitelist.some((d) => dstHost.includes(d));
+                isWhitelisted(dstHost, currentRules.whitelist);
+              const { isWhitelisted: isBypass, matchingRules } = isWhitelisted(
+                dstHost,
+                currentRules.whitelist,
+              );
               const isBlocked = BLOCKED_RESOURCES.some((d) =>
                 dstHost.includes(d),
               );
 
-              let useProxy =
-                currentRules.mode === "smart" ? isBlocked : !isWhitelisted;
+              let useProxy = false;
+              let reason = "";
+
+              if (currentRules.mode === "smart") {
+                if (!isBypass && matchingRules.length > 0) {
+                  useProxy = true;
+                  reason = `Nested exception found: [${matchingRules.join(", ")}]`;
+                } else if (isBypass) {
+                  useProxy = isBlocked;
+                  reason = isBlocked
+                    ? "Blocked resource in Smart mode"
+                    : "Bypass (Whitelisted)";
+                } else {
+                  useProxy = isBlocked;
+                  reason = isBlocked
+                    ? "Blocked resource (No match)"
+                    : "Direct (Not blocked)";
+                }
+              } else {
+                useProxy = !isBypass;
+                reason = isBypass
+                  ? "Whitelisted (Bypass)"
+                  : "Not whitelisted (Proxy)";
+              }
 
               if (isAppWhitelisted) {
                 useProxy = false;
+                this.logger.log(
+                  `[МОСТ] BYPASS: ${dstHost} (App Whitelisted)`,
+                  "info",
+                );
               } else if (useProxy) {
                 this.logger.log(
-                  `[ПРОКСИ] ${dstHost}:${dstPort} -> ${proxyConfig.ip}`,
+                  `[ПРОКСИ] ${dstHost}:${dstPort} -> ${proxyConfig.ip} (${reason})`,
                   "success",
                 );
               }

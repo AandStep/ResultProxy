@@ -55,6 +55,10 @@ class SystemFactory {
         },
         checkAppWhitelist: async () => false,
         setRunAsAdminFlag: async () => {},
+
+        // Новые методы для планировщика задач
+        enableTaskAutostart: async () => {},
+        disableTaskAutostart: async () => {},
       };
     }
 
@@ -84,6 +88,14 @@ class SystemFactory {
         windowsUtils
           ? windowsUtils.setRunAsAdminFlag(enable)
           : Promise.resolve(),
+
+      // Новые методы для планировщика задач (Windows)
+      enableTaskAutostart: (exePath, args) =>
+        windowsUtils
+          ? windowsUtils.enableTaskAutostart(exePath, args)
+          : Promise.resolve(),
+      disableTaskAutostart: () =>
+        windowsUtils ? windowsUtils.disableTaskAutostart() : Promise.resolve(),
     };
   }
 }

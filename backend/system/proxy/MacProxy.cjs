@@ -1,4 +1,6 @@
 const BaseProxyManager = require("./BaseProxyManager.cjs");
+const { getSafeOSWhitelist } = require("../../utils/domain.cjs");
+
 const util = require("util");
 const { execFile, execSync } = require("child_process");
 const execFileAsync = util.promisify(execFile);
@@ -34,8 +36,9 @@ class MacProxy extends BaseProxyManager {
   formatBypassList(whitelist) {
     let bypassStr = "*.local 169.254/16 127.0.0.1 localhost";
     if (whitelist && whitelist.length > 0) {
+      const safeList = getSafeOSWhitelist(whitelist);
       bypassStr +=
-        " " + whitelist.map((d) => (d.includes("*") ? d : `*${d}*`)).join(" ");
+        " " + safeList.map((d) => (d.includes("*") ? d : `*${d}*`)).join(" ");
     }
     return bypassStr;
   }
