@@ -40,7 +40,7 @@ class WindowManager {
                   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
                   "font-src 'self' https://fonts.gstatic.com",
                   "img-src 'self' data: https://flagcdn.com https://cdnjs.cloudflare.com",
-                  "connect-src 'self' http://127.0.0.1:14080",
+                  "connect-src 'self' http://127.0.0.1:14080 https://raw.githubusercontent.com",
                 ].join("; "),
               ],
             },
