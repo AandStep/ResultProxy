@@ -3,6 +3,7 @@
   "version": "2.1.0",
   "type": "module",
   "main": "backend/electron-main.cjs",
+  "license": "GPL-3.0",
   "scripts": {
     "dev:react": "vite",
     "dev:electron": "cross-env NODE_ENV=development electron backend/electron-main.cjs",
