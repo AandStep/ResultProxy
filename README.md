@@ -1,5 +1,7 @@
 # ResultProxy
 
+*Read this in other languages: [English](README.en.md)*
+
 **ResultProxy** — это кроссплатформенное прокси-приложение, созданное с использованием Electron, React и Vite.
 
 🌐 **Официальный сайт проекта:** [https://result-proxy.ru/](https://result-proxy.ru/)
