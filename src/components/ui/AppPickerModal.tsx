@@ -12,17 +12,15 @@ import {
 } from 'react-native';
 import { Search, X, Box, RotateCw } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
-import { getApps } from 'react-native-android-installed-apps-unblocking';
+import { InstalledApps } from 'react-native-launcher-kit';
 import { colors } from '../../theme';
 
 interface AppInfo {
+    label: string;
     packageName: string;
-    versionName: string;
-    versionCode: number;
-    firstInstallTime: number;
-    lastUpdateTime: number;
-    appName: string;
-    icon: string; // Base64 icon
+    icon: string;
+    version?: string;
+    accentColor?: string;
 }
 
 interface AppPickerModalProps {
@@ -54,7 +52,7 @@ export const AppPickerModal: React.FC<AppPickerModalProps> = ({
 
         setLoading(true);
         try {
-            const installedApps = await getApps();
+            const installedApps = await InstalledApps.getSortedApps({ includeVersion: true, includeAccentColor: false });
             cachedApps = installedApps;
             setApps(installedApps);
             setFilteredApps(installedApps);
@@ -78,7 +76,7 @@ export const AppPickerModal: React.FC<AppPickerModalProps> = ({
             const lowerSearch = search.toLowerCase();
             const filtered = apps.filter(
                 (app) =>
-                    app.appName.toLowerCase().includes(lowerSearch) ||
+                    app.label.toLowerCase().includes(lowerSearch) ||
                     app.packageName.toLowerCase().includes(lowerSearch)
             );
             setFilteredApps(filtered);
@@ -95,7 +93,7 @@ export const AppPickerModal: React.FC<AppPickerModalProps> = ({
             android_ripple={{ color: colors.borderLight }}>
             {item.icon ? (
                 <Image
-                    source={{ uri: `data:image/png;base64,${item.icon}` }}
+                    source={{ uri: `file://${item.icon}` }}
                     style={styles.appIcon}
                 />
             ) : (
@@ -105,7 +103,7 @@ export const AppPickerModal: React.FC<AppPickerModalProps> = ({
             )}
             <View style={styles.appInfo}>
                 <Text style={styles.appName} numberOfLines={1}>
-                    {item.appName}
+                    {item.label}
                 </Text>
                 <Text style={styles.packageName} numberOfLines={1}>
                     {item.packageName}

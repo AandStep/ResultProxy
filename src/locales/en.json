@@ -148,6 +148,9 @@
   "logs": {
     "title": "Event Logs",
     "desc": "System logs and connection information",
+    "count": "Logs: {{count}}",
+    "configLoaded": "Configuration loaded successfully",
+    "serviceUnavailable": "Service Unavailable",
     "empty": "No logs available",
     "clear_btn": "Clear",
     "msg": {

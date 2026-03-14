@@ -121,7 +121,14 @@ export const useConfigStore = create<ConfigStore>()(
                     const res = await apiFetch('/api/config');
                     const data = await res.json();
                     if (data.proxies && data.proxies.length > 0) set({ proxies: data.proxies });
-                    if (data.routingRules && Object.keys(data.routingRules).length > 0) set({ routingRules: data.routingRules });
+                    if (data.routingRules && Object.keys(data.routingRules).length > 0) {
+                        const validatedRules = {
+                            mode: data.routingRules.mode || 'global',
+                            whitelist: Array.isArray(data.routingRules.whitelist) ? data.routingRules.whitelist : [],
+                            appWhitelist: Array.isArray(data.routingRules.appWhitelist) ? data.routingRules.appWhitelist : [],
+                        };
+                        set({ routingRules: validatedRules });
+                    }
                     if (data.settings && Object.keys(data.settings).length > 0) set({ settings: data.settings });
                     set({ isConfigLoaded: true });
                     addLog('Конфигурация успешно загружена.', 'success');

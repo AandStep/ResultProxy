@@ -1,0 +1,7 @@
+diff --git a/node_modules/react-native-launcher-kit/src/empty.js b/node_modules/react-native-launcher-kit/src/empty.js
+new file mode 100644
+index 0000000..b66dc02
+--- /dev/null
++++ b/node_modules/react-native-launcher-kit/src/empty.js
+@@ -0,0 +1 @@
++// This file exists only to satisfy React Native codegen which expects a src directory.

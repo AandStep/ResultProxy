@@ -1,13 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
-const DEFAULT_DAEMON_URL = 'http://127.0.0.1:14080';
+const DEFAULT_DAEMON_URL = Platform.OS === 'android' ? 'http://10.0.2.2:14090' : 'http://127.0.0.1:14090';
+const DEFAULT_TOKEN = 'dev-token-result-proxy-2026';
 
-let cachedToken: string | null = null;
+let cachedToken: string | null = DEFAULT_TOKEN;
 let cachedUrl: string | null = null;
 
 export const getBaseUrl = async (): Promise<string> => {
     if (cachedUrl) return cachedUrl;
-    cachedUrl = (await AsyncStorage.getItem('daemonUrl')) ?? DEFAULT_DAEMON_URL;
+    cachedUrl = (await AsyncStorage.getItem('daemonUrl')) || DEFAULT_DAEMON_URL;
     return cachedUrl;
 };
 

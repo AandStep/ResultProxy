@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { apiFetch } from '../services/api';
+import { apiFetch, getBaseUrl } from '../services/api';
 import type { ProxyItem, RoutingRules } from './configStore';
 
 type Stats = { download: number; upload: number };
@@ -64,10 +64,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
     toggleConnection: async (proxies, routingRules, killswitch, addLog) => {
         const { daemonStatus, activeProxy, isConnected } = get();
-        if (daemonStatus !== 'online') {
-            addLog('Служба недоступна.', 'error');
-            return;
-        }
+        // Убираем жесткую блокировку по daemonStatus, так как она может быть ложно-отрицательной при ошибках авторизации
 
         const targetProxy = activeProxy || proxies[0];
         if (proxies.length === 0 || !targetProxy) return;
@@ -78,6 +75,12 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
             if (isConnected) {
                 addLog('Отключение...', 'info');
                 await apiFetch('/api/disconnect', { method: 'POST' });
+                try {
+                    const { NativeModules } = require('react-native');
+                    NativeModules.VpnModule.stopVpn();
+                } catch (e) {
+                    console.error('Failed to stop native VPN:', e);
+                }
                 addLog('Отключено успешно.', 'success');
                 set({ isConnected: false });
             } else {
@@ -95,11 +98,31 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
                 });
 
                 if (!res.ok) {
-                    const errData = await res.json().catch(() => ({}));
+                    const errData = (await res.json().catch(() => ({}))) as any;
                     throw new Error(errData.error || `HTTP ${res.status}`);
                 }
-                const resData = await res.json().catch(() => ({}));
+                const resData = (await res.json().catch(() => ({}))) as any;
                 addLog('Соединение установлено.', 'success');
+                
+                // Start native VPN Service
+                try {
+                    const { NativeModules, Platform } = require('react-native');
+                    if (Platform.OS === 'android') {
+                        const baseUrl = await getBaseUrl();
+                        // Extract host from baseUrl (e.g. http://10.0.2.2:14090 -> 10.0.2.2)
+                        const urlMatch = baseUrl.match(/https?:\/\/([^:/]+)/);
+                        const bridgeHost = urlMatch ? urlMatch[1] : '10.0.2.2';
+                        
+                        NativeModules.VpnModule.startVpn(
+                            bridgeHost,
+                            14081,      // Bridge port is fixed in ProxyManager
+                            routingRules.appWhitelist || []
+                        );
+                    }
+                } catch (e) {
+                    console.error('Failed to start native VPN:', e);
+                }
+
                 if (resData.dnsLeakWarning) {
                     addLog(
                         '⚠️ DNS-утечка: HTTP-прокси не проксирует DNS-запросы. Используйте SOCKS5 для полной защиты.',
@@ -132,6 +155,10 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
 
             if (isConnected) {
                 await apiFetch('/api/disconnect', { method: 'POST' });
+                try {
+                    const { NativeModules } = require('react-native');
+                    NativeModules.VpnModule.stopVpn();
+                } catch { }
                 set({ isConnected: false });
             }
 
@@ -146,11 +173,30 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
             });
 
             if (!res.ok) {
-                const errData = await res.json().catch(() => ({}));
+                const errData = (await res.json().catch(() => ({}))) as any;
                 throw new Error(errData.error || 'Ошибка смены прокси');
             }
 
-            const resData = await res.json().catch(() => ({}));
+            const resData = (await res.json().catch(() => ({}))) as any;
+            
+            // Start native VPN Service
+            try {
+                const { NativeModules, Platform } = require('react-native');
+                if (Platform.OS === 'android') {
+                    const baseUrl = await getBaseUrl();
+                    const urlMatch = baseUrl.match(/https?:\/\/([^:/]+)/);
+                    const bridgeHost = urlMatch ? urlMatch[1] : '10.0.2.2';
+
+                    NativeModules.VpnModule.startVpn(
+                        bridgeHost, 
+                        14081, 
+                        routingRules.appWhitelist || []
+                    );
+                }
+            } catch (e) {
+                console.error('Failed to start native VPN:', e);
+            }
+
             set({ isConnected: true });
             addLog(`Успешно переключено на ${proxy.name}`, 'success');
             if (resData.dnsLeakWarning) {
@@ -196,7 +242,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
             try {
                 const res = await apiFetch('/api/status');
                 if (res.ok) {
-                    const data = await res.json();
+                    const data = (await res.json()) as any;
                     const { daemonStatus, isSwitching, failedProxy } = get();
                     if (daemonStatus !== 'online') set({ daemonStatus: 'online' });
 
@@ -236,7 +282,9 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
                     }));
                 }
             } catch {
-                set({ daemonStatus: 'offline' });
+                const { daemonStatus } = get();
+                // Если мы получили ошибку сети, помечаем как offline
+                if (daemonStatus !== 'offline') set({ daemonStatus: 'offline' });
                 if (get().isConnected) set({ isConnected: false });
             }
         };
@@ -257,7 +305,7 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
                         body: JSON.stringify({ ip: p.ip, port: p.port }),
                     });
                     if (res.ok) {
-                        const data = await res.json();
+                        const data = (await res.json()) as any;
                         newPings[p.id] = data.alive ? `${data.ping}ms` : 'Timeout';
                     } else {
                         newPings[p.id] = 'Error';
