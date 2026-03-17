@@ -24,6 +24,7 @@ import { useConfigStore } from '../store/configStore';
 import { useLogStore } from '../store/logStore';
 import { useConnectionStore } from '../store/connectionStore';
 import { colors } from '../theme';
+import { FlagIcon } from '../components/ui/FlagIcon';
 
 export const SettingsScreen = ({ navigation }: any) => {
     const { t, i18n } = useTranslation();
@@ -102,9 +103,9 @@ export const SettingsScreen = ({ navigation }: any) => {
                         <Globe size={20} color={colors.textSecondary} />
                         <Text style={styles.navText}>{t('settings.language_toggle')}</Text>
                     </View>
-                    <Text style={{ color: colors.primaryLight, fontSize: 14, lineHeight: 20, fontWeight: '600' }}>
-                        {t('settings.current_language')}
-                    </Text>
+                    <View style={styles.langFlagContainer}>
+                        <FlagIcon code={i18n.language?.startsWith('ru') ? 'RU' : 'US'} size={24} />
+                    </View>
                 </Pressable>
                 <Pressable
                     onPress={() => navigation.navigate('Rules')}
@@ -134,6 +135,12 @@ export const SettingsScreen = ({ navigation }: any) => {
                     description={t('settings.killswitch.desc')}
                     isOn={settings.killswitch}
                     onToggle={() => updateSetting('killswitch', !settings.killswitch)}
+                />
+                <SettingToggle
+                    title={t('settings.adblock.title')}
+                    description={t('settings.adblock.desc')}
+                    isOn={settings.adblock}
+                    onToggle={() => updateSetting('adblock', !settings.adblock)}
                 />
             </View>
 
@@ -234,6 +241,16 @@ const styles = StyleSheet.create({
     },
     navLeft: { flexDirection: 'row', alignItems: 'center', gap: 14 },
     navText: { fontSize: 16, lineHeight: 24, fontWeight: '600', color: colors.text },
+    langFlagContainer: {
+        width: 32,
+        height: 24,
+        borderRadius: 4,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.borderLight,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
 
     configCard: {
         backgroundColor: colors.card,

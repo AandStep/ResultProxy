@@ -46,6 +46,7 @@ class TcpConnection(
                 val sock = Socket()
                 vpnService.protect(sock)
                 sock.connect(InetSocketAddress(proxyHost, proxyPort), 10000)
+                Log.d(TAG, "[$key] Socket connected to $proxyHost:$proxyPort. Sending CONNECT...")
                 sock.soTimeout = 0
                 sock.tcpNoDelay = true
 
@@ -57,6 +58,7 @@ class TcpConnection(
                 val input = sock.getInputStream()
                 val respBuf = ByteArray(1024)
                 val respLen = input.read(respBuf)
+                Log.d(TAG, "[$key] Proxy response length: $respLen")
                 if (respLen <= 0) {
                     sendRst()
                     sock.close()
@@ -84,6 +86,7 @@ class TcpConnection(
                 outputQueue.add(synAck)
 
                 state = State.SYN_RECEIVED
+                Log.i(TAG, "[$key] TCP Tunnel established to $dstIpString:$dstPort")
                 startProxyReader(input)
 
             } catch (e: Exception) {

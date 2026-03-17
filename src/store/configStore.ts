@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage, StateStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import i18next from 'i18next';
 import { apiFetch } from '../services/api';
 import { detectCountry } from '../utils/network';
 import { cryptoService } from '../utils/crypto';
@@ -25,6 +26,7 @@ export type RoutingRules = {
 export type AppSettings = {
     autostart: boolean;
     killswitch: boolean;
+    adblock: boolean;
 };
 
 type ConfigStore = {
@@ -54,6 +56,11 @@ type ConfigStore = {
         selectAndConnect: (proxy: ProxyItem, force?: boolean) => Promise<void>,
         addLog: (msg: string, type: string) => void,
     ) => Promise<void>;
+    handleBulkSaveProxies: (
+        proxies: any[],
+        protocol: string,
+        addLog: (msg: string, type: string) => void,
+    ) => Promise<void>;
 };
 
 const encryptedStorage: StateStorage = {
@@ -72,9 +79,6 @@ const encryptedStorage: StateStorage = {
         await cryptoService.init();
         try {
             const parsed = JSON.parse(value);
-            // Don't persist temporary UI state if necessary
-            // In our case we want to persist everything in state except editingProxy maybe?
-            // Actually persist handles filtering via partialize.
             const encrypted = cryptoService.encrypt(parsed);
             await AsyncStorage.setItem(name, encrypted);
         } catch (e) {
@@ -96,7 +100,7 @@ export const useConfigStore = create<ConfigStore>()(
                 whitelist: ['localhost', '127.0.0.1'],
                 appWhitelist: [],
             },
-            settings: { autostart: false, killswitch: false },
+            settings: { autostart: false, killswitch: false, adblock: false },
             editingProxy: null,
             platform: 'android',
 
@@ -120,7 +124,30 @@ export const useConfigStore = create<ConfigStore>()(
                 try {
                     const res = await apiFetch('/api/config');
                     const data = await res.json();
-                    if (data.proxies && data.proxies.length > 0) set({ proxies: data.proxies });
+                    if (data.proxies && data.proxies.length > 0) {
+                        set({ proxies: data.proxies });
+                        
+                        // Async re-detection for unknown countries
+                        setTimeout(async () => {
+                            const currentProxies = get().proxies;
+                            let changed = false;
+                            const updated = await Promise.all(currentProxies.map(async p => {
+                                if (!p.country || p.country === 'unknown' || p.country === '🌐') {
+                                    const c = await detectCountry(p.ip);
+                                    if (c !== p.country) {
+                                        changed = true;
+                                        return { ...p, country: c };
+                                    }
+                                }
+                                return p;
+                            }));
+                            if (changed) {
+                                set({ proxies: updated });
+                                get().syncConfig();
+                                get().syncProxies();
+                            }
+                        }, 1000);
+                    }
                     if (data.routingRules && Object.keys(data.routingRules).length > 0) {
                         const validatedRules = {
                             mode: data.routingRules.mode || 'global',
@@ -170,7 +197,12 @@ export const useConfigStore = create<ConfigStore>()(
 
             updateSetting: (key, value) => {
                 set(state => ({ settings: { ...state.settings, [key]: value } }));
-                if (key === 'autostart' || key === 'killswitch') {
+                if (key === 'autostart' || key === 'killswitch' || key === 'adblock') {
+                    if (key === 'adblock' && value) {
+                        import('../services/adblock').then(({ adblockService }) => {
+                            adblockService.updateHosts().catch(() => { });
+                        });
+                    }
                     apiFetch(`/api/${key}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -226,6 +258,32 @@ export const useConfigStore = create<ConfigStore>()(
                     addLog(`Новый профиль "${proxyData.name}" добавлен.`, 'success');
                 }
 
+                get().syncConfig();
+                get().syncProxies();
+            },
+
+            handleBulkSaveProxies: async (proxiesToImport, protocol, addLog) => {
+                const results: ProxyItem[] = [];
+                const now = Date.now();
+
+                for (let i = 0; i < proxiesToImport.length; i++) {
+                    const p = proxiesToImport[i];
+                    const country = await detectCountry(p.ip);
+                    const timeStr = new Date().toLocaleTimeString('ru-RU', { hour12: false });
+                    results.push({
+                        ...p,
+                        id: now + i,
+                        type: protocol,
+                        country,
+                        name: p.name || `${i18next.t('add.newServer')} ${timeStr}`,
+                    });
+                }
+
+                set(state => ({
+                    proxies: [...state.proxies, ...results],
+                }));
+
+                addLog(`Импортировано прокси: ${results.length}`, 'success');
                 get().syncConfig();
                 get().syncProxies();
             },

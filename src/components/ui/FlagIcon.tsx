@@ -1,5 +1,6 @@
 import React, { useState, memo, useCallback } from 'react';
-import { Image, StyleSheet, Text } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
+import { SvgUri } from 'react-native-svg';
 import { Globe, Server } from 'lucide-react-native';
 import { colors } from '../../theme';
 
@@ -8,10 +9,10 @@ type Props = {
     size?: number;
 };
 
-const FLAG_CDN =
-    'https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.3/flags/4x3';
+const FLAG_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/flag-icons/7.2.3/flags/4x3';
 
 const getIsoCode = (code: string): string | null => {
+    if (!code) return null;
     if (/^[a-zA-Z]{2}$/.test(code)) return code.toLowerCase();
 
     const clean = code.replace(/[\uFE0F]/g, '').trim();
@@ -37,7 +38,7 @@ export const FlagIcon = memo(({ code, size = 24 }: Props) => {
     if (!code || code === 'unknown' || code === '🌐') {
         return <Globe size={size} color={colors.textMuted} />;
     }
-    if (code === 'local' || code === '🏠') {
+    if (code === 'local' || code === '🏠' || code === 'LOCAL') {
         return <Server size={size} color={colors.textMuted} />;
     }
 
@@ -45,30 +46,47 @@ export const FlagIcon = memo(({ code, size = 24 }: Props) => {
 
     if (isoCode && !imgError) {
         return (
-            <Image
-                source={{ uri: `${FLAG_CDN}/${isoCode}.svg` }}
-                style={[styles.flag, { width: size, height: size * 0.75 }]}
-                onError={onError}
-            />
+            <View style={[styles.flagFrame, { width: size, height: size * 0.75 }]}>
+                <SvgUri
+                    uri={`${FLAG_CDN}/${isoCode}.svg`}
+                    width={size}
+                    height={size * 0.75}
+                    onError={onError}
+                />
+            </View>
         );
     }
 
     return (
-        <Text style={styles.fallback}>{isoCode?.toUpperCase() || code}</Text>
+        <View style={[styles.fallbackWrap, { width: size, height: size * 0.75 }]}>
+            <Text style={styles.fallback}>{isoCode?.toUpperCase() || code.substring(0, 2).toUpperCase()}</Text>
+        </View>
     );
 });
 
 FlagIcon.displayName = 'FlagIcon';
 
 const styles = StyleSheet.create({
+    flagFrame: {
+        borderRadius: 4,
+        overflow: 'hidden',
+        backgroundColor: colors.border + '40',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
     flag: {
-        borderRadius: 2,
+        borderRadius: 4,
+    },
+    fallbackWrap: {
+        borderRadius: 4,
+        backgroundColor: colors.border,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     fallback: {
-        fontSize: 12,
-        fontWeight: '700',
+        fontSize: 10,
+        fontWeight: '800',
         color: colors.textSecondary,
         textTransform: 'uppercase',
-        letterSpacing: 1,
     },
 });

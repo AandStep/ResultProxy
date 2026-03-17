@@ -1,9 +1,11 @@
+// ResultProxy Backend Server
 import { StateStore, ProxyItem, StateData } from './core/StateStore';
 import { AuthManager } from './core/AuthManager';
 import { ConfigManager } from './core/ConfigManager';
 import { LoggerService } from './core/LoggerService';
 import { TrafficMonitor } from './core/TrafficMonitor';
 import { ProxyManager } from './proxy/ProxyManager';
+import { validateIp, detectCountryBackend } from './core/geo';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
@@ -11,7 +13,7 @@ import os from 'os';
 
 class ApiServer {
     private app = express();
-    private port = 14090;
+    private port = 14091;
 
     constructor(
         private auth: AuthManager,
@@ -28,11 +30,47 @@ class ApiServer {
     private setupMiddleware() {
         this.app.use(cors());
         this.app.use(express.json());
+    }
 
-        // Auth Middleware
+    private setupRoutes() {
+        // Public Routes
+        this.app.get('/api/status', (req, res) => {
+            res.json(this.state.getState());
+        });
+
+        this.app.get('/api/platform', (req, res) => {
+            res.json({ platform: os.platform() });
+        });
+
+        this.app.get('/api/version', (req, res) => {
+            res.json({ version: '1.0.1-testing-auth' });
+        });
+
+        this.app.post('/api/detect-country', async (req, res) => {
+            const { ip } = req.body;
+            if (!ip) return res.json({ country: '🌐' });
+
+            const cleanIp = ip.split(':')[0];
+
+            if (!validateIp(cleanIp)) {
+                return res.json({ country: '🌐' });
+            }
+
+            if (
+                cleanIp === '127.0.0.1' ||
+                cleanIp === 'localhost' ||
+                cleanIp.startsWith('192.168.') ||
+                cleanIp.startsWith('10.')
+            ) {
+                return res.json({ country: '🏠' });
+            }
+
+            const country = await detectCountryBackend(cleanIp);
+            res.json({ country: country || '🌐' });
+        });
+
+        // Auth Middleware (for private routes)
         this.app.use((req: Request, res: Response, next: NextFunction) => {
-            if (req.path === '/api/platform' || req.path === '/api/version' || req.path === '/api/status') return next();
-            
             const authHeader = req.headers.authorization;
             if (this.auth.verifyToken(authHeader)) {
                 next();
@@ -40,13 +78,8 @@ class ApiServer {
                 res.status(401).json({ error: 'Unauthorized' });
             }
         });
-    }
 
-    private setupRoutes() {
-        this.app.get('/api/status', (req, res) => {
-            res.json(this.state.getState());
-        });
-
+        // Private Routes
         this.app.get('/api/logs', (req, res) => {
             res.json(this.logger.getLogs());
         });
@@ -76,14 +109,6 @@ class ApiServer {
             const alive = await this.monitor.ping(ip, port);
             const ping = Date.now() - start;
             res.json({ alive, ping });
-        });
-
-        this.app.get('/api/platform', (req, res) => {
-            res.json({ platform: os.platform() });
-        });
-
-        this.app.get('/api/version', (req, res) => {
-            res.json({ version: '1.0.0-backend' });
         });
     }
 

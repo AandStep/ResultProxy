@@ -2,57 +2,74 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
     View,
     Text,
+    StyleSheet,
     Pressable,
     ScrollView,
-    StyleSheet,
+    ActivityIndicator,
+    Vibration,
 } from 'react-native';
 import {
     Power,
-    Plus,
+    Shield,
+    ShieldAlert,
+    ShieldCheck,
     Globe,
+    Zap,
+    ChevronRight,
+    ArrowDown,
+    ArrowUp,
+    Settings,
+    Plus,
     Pencil,
     ChevronDown,
     Activity,
 } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
+import { useConnectionStore } from '../store/connectionStore';
+import { useConfigStore } from '../store/configStore';
+import { useLogStore } from '../store/logStore';
+import { colors } from '../theme';
 import { FlagIcon } from '../components/ui/FlagIcon';
 import { SpeedChart } from '../components/ui/SpeedChart';
-import { useConfigStore } from '../store/configStore';
-import { useConnectionStore } from '../store/connectionStore';
-import { useLogStore } from '../store/logStore';
 import { formatBytes, formatSpeed } from '../utils/formatters';
-import { colors } from '../theme';
 
 export const HomeScreen = ({ navigation }: any) => {
     const { t } = useTranslation();
-    const proxies = useConfigStore(s => s.proxies);
-    const setEditingProxy = useConfigStore(s => s.setEditingProxy);
-    const routingRules = useConfigStore(s => s.routingRules);
-    const settings = useConfigStore(s => s.settings);
-
+    
+    // Connection Store
     const isConnected = useConnectionStore(s => s.isConnected);
-    const isProxyDead = useConnectionStore(s => s.isProxyDead);
+    const isSwitching = useConnectionStore(s => s.isSwitching);
     const failedProxy = useConnectionStore(s => s.failedProxy);
-    const setFailedProxy = useConnectionStore(s => s.setFailedProxy);
     const activeProxy = useConnectionStore(s => s.activeProxy);
+    const isProxyDead = useConnectionStore(s => s.isProxyDead);
     const stats = useConnectionStore(s => s.stats);
     const speedHistory = useConnectionStore(s => s.speedHistory);
     const pings = useConnectionStore(s => s.pings);
-    const toggleConnection = useConnectionStore(s => s.toggleConnection);
+    
     const selectAndConnect = useConnectionStore(s => s.selectAndConnect);
+    const toggleConnection = useConnectionStore(s => s.toggleConnection);
+    const setFailedProxy = useConnectionStore(s => s.setFailedProxy);
+
+    // Config Store
+    const proxies = useConfigStore(s => s.proxies);
+    const routingRules = useConfigStore(s => s.routingRules);
+    const settings = useConfigStore(s => s.settings);
+    const setEditingProxy = useConfigStore(s => s.setEditingProxy);
+    
+    // Log Store
     const addLog = useLogStore(s => s.addLog);
 
-    const isError = !!failedProxy;
+    // Local UI State
     const [isProxyListOpen, setIsProxyListOpen] = useState(false);
-    const hasProxies = proxies.length > 0;
-    const displayProxy = failedProxy || activeProxy || proxies[0];
 
-    const handleToggle = useCallback(() => {
-        if (isError) {
-            setFailedProxy(null);
-        }
-        toggleConnection(proxies, routingRules, settings.killswitch, addLog);
-    }, [isError, setFailedProxy, toggleConnection, proxies, routingRules, settings.killswitch, addLog]);
+    const isError = !!failedProxy;
+    const hasProxies = proxies.length > 0;
+    const displayProxy = activeProxy || failedProxy || (proxies.length > 0 ? proxies[0] : null);
+
+    const handleToggle = useCallback(async () => {
+        Vibration.vibrate(50);
+        await toggleConnection(proxies, routingRules, settings.killswitch, addLog);
+    }, [proxies, routingRules, settings.killswitch, addLog, toggleConnection]);
 
     const handleSelectProxy = useCallback(
         (proxy: any) => {
@@ -115,6 +132,7 @@ export const HomeScreen = ({ navigation }: any) => {
             return acc;
         }, {}),
     ).sort(([a], [b]) => a.localeCompare(b));
+
 
     return (
         <ScrollView

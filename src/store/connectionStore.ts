@@ -247,19 +247,11 @@ export const useConnectionStore = create<ConnectionStore>((set, get) => ({
                     if (daemonStatus !== 'online') set({ daemonStatus: 'online' });
 
                     set({ isProxyDead: !!data.isProxyDead });
-                    if (data.isConnected) set({ failedProxy: null });
-
                     if (data.isConnected) {
-                        if (data.isProxyDead && !prevProxyDead) {
-                            addLog(
-                                `Внимание: Узел ${data.activeProxy?.ip || ''} перестал отвечать!`,
-                                'error',
-                            );
-                        } else if (!data.isProxyDead && prevProxyDead) {
-                            addLog('Связь с узлом восстановлена.', 'success');
-                        }
+                        set({ failedProxy: null });
                     }
                     prevProxyDead = !!data.isProxyDead;
+
 
                     if (!isSwitching) {
                         set({ isConnected: data.isConnected });

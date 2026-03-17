@@ -64,6 +64,7 @@ class Tun2HttpEngine(
                 }
 
                 val data = buffer.copyOfRange(0, length)
+                Log.v(TAG, "Read $length bytes from TUN")
                 processPacket(data, length)
             }
         } catch (e: InterruptedException) {
@@ -138,6 +139,11 @@ class Tun2HttpEngine(
         val tcpHeader = Packet.parseTcp(data, ipHeader.headerLength, length) ?: return
 
         val key = "${ipHeader.srcIpString()}:${tcpHeader.srcPort}-${ipHeader.dstIpString()}:${tcpHeader.dstPort}"
+
+        // Bypass proxy traffic to avoid loops
+        if (ipHeader.dstIpString() == proxyHost && tcpHeader.dstPort == proxyPort) {
+            return
+        }
 
         if (tcpHeader.hasRst()) {
             connections[key]?.handleRst()

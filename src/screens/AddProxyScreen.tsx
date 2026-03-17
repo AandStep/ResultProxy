@@ -1,17 +1,24 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TextInput, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { Lock } from 'lucide-react-native';
+import { Lock, FileUp, ClipboardList } from 'lucide-react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import DocumentPicker from 'react-native-document-picker';
+import RNFS from 'react-native-fs';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, ProxyItem } from '../store/configStore';
 import { useConnectionStore } from '../store/connectionStore';
 import { useLogStore } from '../store/logStore';
 import { colors } from '../theme';
+import { parseProxies, ParsedProxy } from '../utils/proxyParser';
+import { ProtocolSelectionModal } from '../components/ui/ProtocolSelectionModal';
+import { ProtocolWarningModal } from '../components/ui/ProtocolWarningModal';
 
 export const AddProxyScreen = ({ navigation }: any) => {
     const { t } = useTranslation();
     const editingProxy = useConfigStore(s => s.editingProxy);
     const setEditingProxy = useConfigStore(s => s.setEditingProxy);
     const handleSaveProxy = useConfigStore(s => s.handleSaveProxy);
+    const handleBulkSaveProxies = useConfigStore(s => s.handleBulkSaveProxies);
     const routingRules = useConfigStore(s => s.routingRules);
     const settings = useConfigStore(s => s.settings);
 
@@ -32,6 +39,16 @@ export const AddProxyScreen = ({ navigation }: any) => {
         password: '',
         country: '🌐',
     });
+
+    const [importModalVisible, setImportModalVisible] = useState(false);
+    const [warningVisible, setWarningVisible] = useState(false);
+    const [proxiesToImport, setProxiesToImport] = useState<ParsedProxy[]>([]);
+
+    useEffect(() => {
+        if (!editingProxy) {
+            setWarningVisible(true);
+        }
+    }, []);
 
     useEffect(() => {
         if (editingProxy) {
@@ -76,6 +93,47 @@ export const AddProxyScreen = ({ navigation }: any) => {
         routingRules, settings.killswitch, addLog, navigation, t,
     ]);
 
+    const handleFileImport = async () => {
+        try {
+            const pickerResult = await DocumentPicker.pickSingle({
+                type: [DocumentPicker.types.plainText, DocumentPicker.types.allFiles],
+            });
+            const content = await RNFS.readFile(pickerResult.uri, 'utf8');
+            const parsed = parseProxies(content);
+            if (parsed.length > 0) {
+                setProxiesToImport(parsed);
+                setImportModalVisible(true);
+            } else {
+                addLog(t('add.noProxiesFound'), 'error');
+            }
+        } catch (err) {
+            if (!DocumentPicker.isCancel(err)) {
+                addLog('Ошибка чтения файла', 'error');
+            }
+        }
+    };
+
+    const handleClipboardImport = async () => {
+        const text = await Clipboard.getString();
+        if (!text) {
+            addLog(t('add.clipboardEmpty'), 'error');
+            return;
+        }
+        const parsed = parseProxies(text);
+        if (parsed.length > 0) {
+            setProxiesToImport(parsed);
+            setImportModalVisible(true);
+        } else {
+            addLog(t('add.noProxiesFound'), 'error');
+        }
+    };
+
+    const confirmBulkImport = async (protocol: string) => {
+        setImportModalVisible(false);
+        await handleBulkSaveProxies(proxiesToImport, protocol, addLog);
+        navigation.goBack();
+    };
+
     const updateField = useCallback((key: string, value: string) => {
         setFormData(prev => ({ ...prev, [key]: value }));
     }, []);
@@ -90,6 +148,25 @@ export const AddProxyScreen = ({ navigation }: any) => {
                     {editingProxy ? t('add.descEdit') : t('add.descAdd')}
                 </Text>
             </View>
+
+            {!editingProxy && (
+                <View style={styles.importSection}>
+                    <Pressable
+                        onPress={handleFileImport}
+                        style={styles.importBtn}
+                        android_ripple={{ color: colors.border }}>
+                        <FileUp size={20} color={colors.textSecondary} />
+                        <Text style={styles.importBtnText}>{t('add.fromFile')}</Text>
+                    </Pressable>
+                    <Pressable
+                        onPress={handleClipboardImport}
+                        style={styles.importBtn}
+                        android_ripple={{ color: colors.border }}>
+                        <ClipboardList size={20} color={colors.textSecondary} />
+                        <Text style={styles.importBtnText}>{t('add.fromClipboard')}</Text>
+                    </Pressable>
+                </View>
+            )}
 
             <View style={styles.form}>
                 <View>
@@ -198,16 +275,53 @@ export const AddProxyScreen = ({ navigation }: any) => {
                     </Pressable>
                 </View>
             </View>
+
+            <ProtocolSelectionModal
+                visible={importModalVisible}
+                count={proxiesToImport.length}
+                onClose={() => setImportModalVisible(false)}
+                onConfirm={confirmBulkImport}
+            />
+
+            <ProtocolWarningModal
+                visible={warningVisible}
+                onClose={() => setWarningVisible(false)}
+            />
         </ScrollView>
     );
 };
 
 const styles = StyleSheet.create({
     scrollView: { flex: 1, backgroundColor: colors.bg },
-    container: { padding: 16, gap: 16 },
+    container: { padding: 16, gap: 16, paddingBottom: 40 },
     headerSection: {},
     title: { fontSize: 30, lineHeight: 36, fontWeight: '700', color: colors.text },
     desc: { fontSize: 16, lineHeight: 24, color: colors.textSecondary, marginTop: 6 },
+
+    importSection: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 12,
+    },
+    importBtn: {
+        flex: 1,
+        minWidth: 140,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+        borderRadius: 16,
+        paddingVertical: 14,
+        paddingHorizontal: 8,
+    },
+    importBtnText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: colors.textSecondary,
+    },
 
     form: {
         backgroundColor: colors.card,

@@ -6,39 +6,51 @@ import {
     Linking,
     StyleSheet,
     ScrollView,
+    Image,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import { ShoppingCart, Copy, ExternalLink, Check } from 'lucide-react-native';
+import { Copy, ExternalLink, Check } from 'lucide-react-native';
 import { useTranslation } from 'react-i18next';
 import { useLogStore } from '../store/logStore';
 import { colors } from '../theme';
 
-const AFFILIATE_LINK = 'https://proxy6.net/?r=833290';
-const PROMO_CODE = 'resultproxy';
+const PARTNERS = [
+    {
+        id: 'proxy6' as const,
+        link: 'https://proxy6.net/?r=833290',
+        promoCode: 'resultproxy',
+        logo: require('../assets/p6logo.png'),
+    },
+    {
+        id: 'proxy_market' as const,
+        link: 'https://ru.dashboard.proxy.market/?ref=resultproxy',
+        promoCode: 'resultproxy',
+        logo: require('../assets/pmlogo.png'),
+    },
+];
+
+type PartnerId = typeof PARTNERS[number]['id'];
 
 export const BuyProxyScreen = () => {
     const { t } = useTranslation();
     const addLog = useLogStore(s => s.addLog);
 
-    const [linkCopied, setLinkCopied] = useState(false);
-    const [promoCopied, setPromoCopied] = useState(false);
+    const [copiedLink, setCopiedLink] = useState<PartnerId | null>(null);
+    const [copiedPromo, setCopiedPromo] = useState<PartnerId | null>(null);
 
-    const handleCopyAndGo = useCallback(() => {
-        Clipboard.setString(AFFILIATE_LINK);
+    const handleCopyAndGo = useCallback((link: string, partnerId: PartnerId) => {
+        Clipboard.setString(link);
         addLog('Ссылка скопирована.', 'success');
-
-        setLinkCopied(true);
-        setTimeout(() => setLinkCopied(false), 2000);
-
-        Linking.openURL(AFFILIATE_LINK);
+        setCopiedLink(partnerId);
+        setTimeout(() => setCopiedLink(null), 2000);
+        Linking.openURL(link);
     }, [addLog]);
 
-    const handleCopyPromo = useCallback(() => {
-        Clipboard.setString(PROMO_CODE);
+    const handleCopyPromo = useCallback((promoCode: string, partnerId: PartnerId) => {
+        Clipboard.setString(promoCode);
         addLog('Промокод скопирован.', 'success');
-
-        setPromoCopied(true);
-        setTimeout(() => setPromoCopied(false), 2000);
+        setCopiedPromo(partnerId);
+        setTimeout(() => setCopiedPromo(null), 2000);
     }, [addLog]);
 
     return (
@@ -48,81 +60,69 @@ export const BuyProxyScreen = () => {
                 <Text style={styles.desc}>{t('buy.desc')}</Text>
             </View>
 
-            <View style={styles.card}>
-                <View style={styles.iconContainer}>
-                    <ShoppingCart size={32} color={colors.primary} />
-                </View>
-                <Text style={styles.cardTitle}>{t('buy.discount')}</Text>
-                <Text style={styles.cardDesc}>{t('buy.discount_desc')}</Text>
-
-                <View style={styles.actionList}>
-                    <Pressable
-                        onPress={handleCopyAndGo}
-                        style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                    >
-                        <View style={styles.actionTopRow}>
-                            <View style={styles.actionIconBox}>
-                                <ExternalLink size={20} color={colors.textSecondary} />
+            <View style={styles.partnerList}>
+                {PARTNERS.map(partner => (
+                    <View key={partner.id} style={styles.card}>
+                        <View style={styles.cardTop}>
+                            <View style={styles.logoContainer}>
+                                <Image
+                                    source={partner.logo}
+                                    style={styles.logoImage}
+                                    resizeMode="contain"
+                                />
                             </View>
-                            <Text style={styles.actionText} numberOfLines={1}>
-                                {AFFILIATE_LINK}
-                            </Text>
-                        </View>
-                        <View style={styles.actionBottomBtn}>
-                            {linkCopied ? (
-                                <>
-                                    <Check size={16} color={colors.primaryLight} />
-                                    <Text style={[styles.actionBottomBtnText, styles.actionBottomBtnTextSuccess]}>
-                                        {t('buy.copied')}
-                                    </Text>
-                                </>
-                            ) : (
-                                <>
-                                    <Copy size={16} color={colors.textSecondary} />
-                                    <Text style={styles.actionBottomBtnText}>
-                                        {t('buy.go')}
-                                    </Text>
-                                </>
-                            )}
-                        </View>
-                    </Pressable>
-
-                    <Pressable
-                        onPress={handleCopyPromo}
-                        style={({ pressed }) => [styles.actionBtn, pressed && styles.actionBtnPressed]}
-                    >
-                        <View style={styles.actionTopRow}>
-                            <View style={styles.actionIconBox}>
-                                <Copy size={20} color={colors.textSecondary} />
-                            </View>
-                            <View style={styles.promoTextContainer}>
-                                <Text style={styles.actionTextPromoTitle}>
-                                    {t('buy.promo_title')}
+                            <View style={styles.cardContent}>
+                                <Text style={styles.cardTitle}>
+                                    {t(`buy.${partner.id}.discount`)}
                                 </Text>
-                                <Text style={styles.actionTextPromoCode} numberOfLines={1}>
-                                    {PROMO_CODE}
+                                <Text style={styles.cardDesc} numberOfLines={3}>
+                                    {t(`buy.${partner.id}.discount_desc`)}
                                 </Text>
                             </View>
                         </View>
-                        <View style={styles.actionBottomBtn}>
-                            {promoCopied ? (
-                                <>
+
+                        <View style={styles.actionsRow}>
+                            <Pressable
+                                onPress={() => handleCopyAndGo(partner.link, partner.id)}
+                                style={({ pressed }) => [
+                                    styles.primaryBtn,
+                                    pressed && styles.primaryBtnPressed,
+                                ]}>
+                                {copiedLink === partner.id ? (
+                                    <Check size={16} color={colors.text} />
+                                ) : (
+                                    <ExternalLink size={16} color={colors.text} />
+                                )}
+                                <Text style={styles.primaryBtnText}>
+                                    {copiedLink === partner.id ? t('buy.copied') : t('buy.go')}
+                                </Text>
+                            </Pressable>
+
+                            <Pressable
+                                onPress={() => handleCopyPromo(partner.promoCode, partner.id)}
+                                style={({ pressed }) => [
+                                    styles.secondaryBtn,
+                                    pressed && styles.secondaryBtnPressed,
+                                ]}>
+                                {copiedPromo === partner.id ? (
                                     <Check size={16} color={colors.primaryLight} />
-                                    <Text style={[styles.actionBottomBtnText, styles.actionBottomBtnTextSuccess]}>
-                                        {t('buy.copied')}
-                                    </Text>
-                                </>
-                            ) : (
-                                <>
+                                ) : (
                                     <Copy size={16} color={colors.textSecondary} />
-                                    <Text style={styles.actionBottomBtnText}>
-                                        {t('buy.copy')}
+                                )}
+                                <View style={styles.promoBtnContent}>
+                                    <Text style={styles.promoLabel}>
+                                        {t(`buy.${partner.id}.promo_title`)}
                                     </Text>
-                                </>
-                            )}
+                                    <Text style={styles.promoCode}>
+                                        {copiedPromo === partner.id
+                                            ? t('buy.copied')
+                                            : partner.promoCode}
+                                    </Text>
+                                </View>
+                            </Pressable>
                         </View>
-                    </Pressable>
-                </View>
+                    </View>
+                ))}
             </View>
         </ScrollView>
     );
@@ -132,118 +132,116 @@ const styles = StyleSheet.create({
     scrollView: { flex: 1, backgroundColor: colors.bg },
     container: { padding: 16, gap: 24, paddingBottom: 32 },
     headerSection: {},
-    title: { fontSize: 30, lineHeight: 36, fontWeight: '700', color: colors.text },
-    desc: { fontSize: 16, lineHeight: 24, color: '#a1a1aa', marginTop: 8 },
+    title: {
+        fontSize: 30,
+        lineHeight: 36,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    desc: {
+        fontSize: 16,
+        lineHeight: 24,
+        color: colors.textSecondary,
+        marginTop: 8,
+    },
+
+    partnerList: { gap: 16 },
 
     card: {
         backgroundColor: colors.card,
-        padding: 32,
+        padding: 24,
         borderRadius: 24,
         borderWidth: 1,
         borderColor: colors.border,
-        alignItems: 'center',
+        gap: 20,
     },
-    iconContainer: {
-        backgroundColor: 'rgba(0, 126, 58, 0.1)',
-        width: 64,
-        height: 64,
-        borderRadius: 16,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 24,
-    },
-    cardTitle: {
-        fontSize: 20,
-        lineHeight: 28,
-        fontWeight: '700',
-        color: colors.text,
-        marginBottom: 16,
-        textAlign: 'center',
-    },
-    cardDesc: {
-        fontSize: 16,
-        lineHeight: 24,
-        color: '#a1a1aa',
-        marginBottom: 32,
-        textAlign: 'center',
-    },
-
-    actionList: {
-        width: '100%',
-        gap: 16,
-    },
-    actionBtn: {
-        width: '100%',
-        backgroundColor: '#09090b', // zinc-950
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: 16,
-        padding: 16,
-        gap: 16,
-    },
-    actionBtnPressed: {
-        borderColor: 'rgba(0, 168, 25, 0.5)',
-        backgroundColor: 'rgba(0, 168, 25, 0.02)',
-    },
-    actionTopRow: {
+    cardTop: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 16,
+        gap: 18,
     },
-    actionIconBox: {
-        backgroundColor: colors.card,
-        padding: 12,
-        borderRadius: 12,
+    logoContainer: {
+        backgroundColor: colors.bg,
+        padding: 14,
+        borderRadius: 16,
         borderWidth: 1,
         borderColor: colors.border,
     },
-    actionText: {
-        color: '#d4d4d8', // zinc-300
-        fontSize: 14,
-        lineHeight: 20,
-        fontFamily: 'monospace',
+    logoImage: {
+        width: 40,
+        height: 40,
+    },
+    cardContent: {
         flex: 1,
     },
-    promoTextContainer: {
-        flex: 1,
+    cardTitle: {
+        fontSize: 18,
+        lineHeight: 24,
+        fontWeight: '700',
+        color: colors.text,
+        marginBottom: 4,
+    },
+    cardDesc: {
+        fontSize: 14,
+        lineHeight: 20,
+        color: colors.textSecondary,
+    },
+
+    actionsRow: {
+        gap: 10,
+    },
+    primaryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'center',
+        gap: 8,
+        backgroundColor: colors.primary,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        borderRadius: 14,
+        elevation: 4,
     },
-    actionTextPromoTitle: {
-        color: '#71717a', // zinc-500
-        fontSize: 12,
-        lineHeight: 16,
-        fontWeight: '500',
-        marginBottom: 2,
+    primaryBtnPressed: {
+        backgroundColor: colors.primaryLight,
     },
-    actionTextPromoCode: {
-        color: '#d4d4d8', // zinc-300
+    primaryBtnText: {
         fontSize: 14,
         lineHeight: 20,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    secondaryBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: colors.border,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: colors.borderLight + '50',
+    },
+    secondaryBtnPressed: {
+        borderColor: colors.primaryLight + '50',
+        backgroundColor: colors.primaryLight + '08',
+    },
+    promoBtnContent: {
+        flex: 1,
+    },
+    promoLabel: {
+        fontSize: 11,
+        lineHeight: 14,
+        color: colors.textMuted,
+        fontWeight: '500',
+    },
+    promoCode: {
+        fontSize: 13,
+        lineHeight: 18,
+        color: '#d4d4d8',
         fontWeight: '700',
         fontFamily: 'monospace',
         textTransform: 'uppercase',
         letterSpacing: 2,
-    },
-    actionBottomBtn: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        backgroundColor: colors.card,
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: colors.border,
-        gap: 8,
-    },
-    actionBottomBtnText: {
-        fontSize: 14,
-        lineHeight: 20,
-        fontWeight: '500',
-        color: '#a1a1aa', // zinc-400
-    },
-    actionBottomBtnTextSuccess: {
-        color: colors.primaryLight,
+        marginTop: 2,
     },
 });

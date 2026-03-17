@@ -51,7 +51,17 @@
     "cancel": "Cancel",
     "saveProxy": "Save Proxy",
     "saveChanges": "Save Changes",
-    "newServer": "New Server"
+    "fromFile": "From File",
+    "fromClipboard": "Clipboard",
+    "protocolSelectionTitle": "Select Protocol",
+    "protocolSelectionDesc": "Choose the protocol for the imported proxies",
+    "confirmImport": "Add {{count}} proxies",
+    "newServer": "New Proxy",
+    "protocolWarningTitle": "Supported Protocols",
+    "protocolWarningDesc": "ResultProxy supports HTTP, HTTPS and SOCKS5 proxies. Please ensure your provider supplied the data in one of these formats."
+  },
+  "common": {
+    "gotIt": "Got it"
   },
   "settings": {
     "title": "Application Settings",
@@ -71,6 +81,10 @@
     "killswitch": {
       "title": "Enable Kill Switch",
       "desc": "Instantly cut internet connection if proxy goes down."
+    },
+    "adblock": {
+      "title": "Ad Blocker",
+      "desc": "Automatically block ads and trackers when connected through proxy."
     },
     "export_import": {
       "title": "Export / Import Configurations",
@@ -183,12 +197,19 @@
   },
   "buy": {
     "title": "Buy Proxies",
-    "desc": "Reliable IPv4 and IPv6 proxies for any tasks",
-    "discount": "5% discount from PROXY6.net",
-    "discount_desc": "Register on PROXY6.net using the link below to get a 5% discount on proxies.",
+    "desc": "Reliable IPv4 and IPv6 proxies for any tasks from our partners",
+    "proxy6": {
+      "discount": "5% discount from PROXY6.net",
+      "discount_desc": "Register on PROXY6.net using the link below to get a 5% discount on proxies.",
+      "promo_title": "5% Promo Code"
+    },
+    "proxy_market": {
+      "discount": "5% discount from proxy market",
+      "discount_desc": "Register on proxy market using the link below to get a 5% discount on proxies.",
+      "promo_title": "5% Promo Code"
+    },
     "copied": "Copied!",
     "go": "Go to Site",
-    "promo_title": "5% Promo Code",
     "copy": "Copy"
   },
   "app": {
