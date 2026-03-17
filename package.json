@@ -1,6 +1,8 @@
 {
   "name": "resultproxy",
   "version": "2.1.0",
+  "description": "ResultProxy Application",
+  "author": "ResultProxy",
   "type": "module",
   "main": "backend/electron-main.cjs",
   "license": "GPL-3.0",

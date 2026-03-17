@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-const { BrowserWindow, nativeImage, app, session } = require("electron");
+const { BrowserWindow, nativeImage, app, session, shell } = require("electron");
 const path = require("path");
 
 class WindowManager {
@@ -42,6 +42,17 @@ class WindowManager {
         preload: path.join(__dirname, "preload.cjs"),
       },
     });
+
+    // Открываем внешние ссылки в системном браузере
+    this.mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      if (url.startsWith("http:") || url.startsWith("https:")) {
+        shell.openExternal(url);
+        return { action: "deny" };
+      }
+      return { action: "allow" };
+    });
+
+
 
     // CSP-заголовки (только в production — в dev Vite требует inline-скрипты и WebSocket для HMR)
     if (!isDev) {
