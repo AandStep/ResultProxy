@@ -6,9 +6,47 @@ on:
       - 'v*' # Запускается автоматически при создании тега, например v2.1.1
 
 jobs:
-  release:
-    runs-on: ${{ matrix.os }}
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Check out Git repository
+        uses: actions/checkout@v4
 
+      - name: Parse update.json and format Release Data
+        id: prepare_release
+        run: |
+          node -e "
+          const fs = require('fs');
+          const update = JSON.parse(fs.readFileSync('update.json', 'utf8'));
+          
+          let notesText = update.releaseNotes.replace(/\. /g, '.\n-');
+          if (!notesText.startsWith('-')) notesText = '-' + notesText;
+          if (notesText.endsWith('-')) notesText = notesText.slice(0, -1);
+          
+          const title = update.releaseTitle || 'Bug Fixes & Improvements';
+          const releaseBody = 'Что нового в версии ' + update.version + '?\n\n' + notesText + '\n\n🌐 Официальный сайт: ' + new URL(update.downloadUrl).hostname;
+          
+          fs.writeFileSync('RELEASE_BODY.txt', releaseBody);
+          const fsOut = require('fs');
+          fsOut.appendFileSync(process.env.GITHUB_OUTPUT, 'release_name=Result Proxy v' + update.version + ' - ' + title + '\n');
+          "
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.prepare_release.outputs.release_name }}
+          body_path: RELEASE_BODY.txt
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    needs: create-release
+    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
@@ -25,30 +63,8 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Prepare Release Info
-        run: |
-          node -e "
-          const fs = require('fs');
-          const update = JSON.parse(fs.readFileSync('update.json', 'utf8'));
-          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-          
-          // Делаем красивый список, если есть несколько предложений (разделенных точкой)
-          let notesText = update.releaseNotes.replace(/\. /g, '.\n-');
-          if (!notesText.startsWith('-')) notesText = '-' + notesText;
-          if (notesText.endsWith('-')) notesText = notesText.slice(0, -1);
-          
-          const title = update.releaseTitle || 'Bug Fixes & Improvements';
-          const releaseBody = 'Что нового в версии ' + update.version + '?\n\n' + notesText + '\n\n🌐 Официальный сайт: ' + new URL(update.downloadUrl).hostname;
-          
-          pkg.build.releaseInfo = {
-            releaseName: 'Result Proxy v' + update.version + ' - ' + title,
-            releaseNotes: releaseBody
-          };
-          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
-          "
-
-      # Сборка и публикация релиза
-      - name: Build and Release
+      - name: Build and Release Assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --publish always
+
