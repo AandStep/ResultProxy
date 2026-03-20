@@ -39,6 +39,7 @@ class WindowManager {
         nodeIntegration: false,
         contextIsolation: true,
         sandbox: true,
+        backgroundThrottling: false,
         preload: path.join(__dirname, "preload.cjs"),
       },
     });
@@ -51,8 +52,6 @@ class WindowManager {
       }
       return { action: "allow" };
     });
-
-
 
     // CSP-заголовки (только в production — в dev Vite требует inline-скрипты и WebSocket для HMR)
     if (!isDev) {
