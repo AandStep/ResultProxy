@@ -25,6 +25,28 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
+      - name: Prepare Release Info
+        run: |
+          node -e "
+          const fs = require('fs');
+          const update = JSON.parse(fs.readFileSync('update.json', 'utf8'));
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          
+          // Делаем красивый список, если есть несколько предложений (разделенных точкой)
+          let notesText = update.releaseNotes.replace(/\. /g, '.\n-');
+          if (!notesText.startsWith('-')) notesText = '-' + notesText;
+          if (notesText.endsWith('-')) notesText = notesText.slice(0, -1);
+          
+          const title = update.releaseTitle || 'Bug Fixes & Improvements';
+          const releaseBody = 'Что нового в версии ' + update.version + '?\n\n' + notesText + '\n\n🌐 Официальный сайт: ' + new URL(update.downloadUrl).hostname;
+          
+          pkg.build.releaseInfo = {
+            releaseName: 'Result Proxy v' + update.version + ' - ' + title,
+            releaseNotes: releaseBody
+          };
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2));
+          "
+
       # Сборка и публикация релиза
       - name: Build and Release
         env:
