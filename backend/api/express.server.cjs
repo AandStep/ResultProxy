@@ -88,38 +88,56 @@ function httpsGet(url, timeoutMs = 3000) {
 }
 
 async function detectCountryBackend(cleanIp) {
-  // 1. iplocation.net (HTTPS)
-  try {
-    const data = await httpsGet(`https://api.iplocation.net/?ip=${cleanIp}`);
-    if (
-      data &&
-      data.country_code2 &&
-      data.country_code2 !== "-" &&
-      data.country_code2.length === 2
-    ) {
-      return data.country_code2.toLowerCase();
-    }
-  } catch (e) {}
+  const promises = [
+    (async () => {
+      try {
+        const data = await httpsGet(`https://api.country.is/${cleanIp}`);
+        if (data && data.country && data.country.length === 2) {
+          return data.country.toLowerCase();
+        }
+      } catch (e) {}
+      return null;
+    })(),
+    (async () => {
+      try {
+        const data = await httpsGet(`https://get.geojs.io/v1/ip/country/${cleanIp}.json`);
+        if (data && data.country && data.country.length === 2) {
+          return data.country.toLowerCase();
+        }
+      } catch (e) {}
+      return null;
+    })(),
+    (async () => {
+      try {
+        const data = await httpsGet(`https://api.iplocation.net/?ip=${cleanIp}`);
+        if (data && data.country_code2 && data.country_code2 !== "-" && data.country_code2.length === 2) {
+          return data.country_code2.toLowerCase();
+        }
+      } catch (e) {}
+      return null;
+    })()
+  ];
 
-  // 2. geojs.io (HTTPS)
-  try {
-    const data = await httpsGet(
-      `https://get.geojs.io/v1/ip/country/${cleanIp}.json`,
-    );
-    if (data && data.country_code && data.country_code.length === 2) {
-      return data.country_code.toLowerCase();
+  const results = await Promise.all(promises);
+  
+  const counts = {};
+  for (const code of results) {
+    if (code) {
+      counts[code] = (counts[code] || 0) + 1;
     }
-  } catch (e) {}
+  }
 
-  // 3. country.is (HTTPS)
-  try {
-    const data = await httpsGet(`https://api.country.is/${cleanIp}`);
-    if (data && data.country && data.country.length === 2) {
-      return data.country.toLowerCase();
+  let maxCount = 0;
+  let bestCode = null;
+  
+  for (const code of results) {
+    if (code && counts[code] > maxCount) {
+      maxCount = counts[code];
+      bestCode = code;
     }
-  } catch (e) {}
+  }
 
-  return null;
+  return bestCode;
 }
 
 // ═══════════════════════════════════════════════════════════
