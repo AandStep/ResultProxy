@@ -15,10 +15,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+const { app } = require("electron");
 const express = require("express");
 const cors = require("cors");
 const https = require("https");
-const { app } = require("electron");
 const {
   validateIp,
   validatePort,
@@ -64,7 +64,7 @@ function recordAuthFailure(ip) {
 }
 
 // ═══════════════════════════════════════════════════════════
-// GEO-API helper (HTTPS only, цепочка fallback'ов)
+// GEO-API (Опрос собственного сервера)
 // ═══════════════════════════════════════════════════════════
 function httpsGet(url, timeoutMs = 3000) {
   return new Promise((resolve, reject) => {
@@ -87,38 +87,15 @@ function httpsGet(url, timeoutMs = 3000) {
   });
 }
 
-async function detectCountryBackend(cleanIp) {
-  // 1. iplocation.net (HTTPS)
+async function detectCountryBackend(cleanIp, logger = null) {
   try {
-    const data = await httpsGet(`https://api.iplocation.net/?ip=${cleanIp}`);
-    if (
-      data &&
-      data.country_code2 &&
-      data.country_code2 !== "-" &&
-      data.country_code2.length === 2
-    ) {
-      return data.country_code2.toLowerCase();
-    }
-  } catch (e) {}
-
-  // 2. geojs.io (HTTPS)
-  try {
-    const data = await httpsGet(
-      `https://get.geojs.io/v1/ip/country/${cleanIp}.json`,
-    );
-    if (data && data.country_code && data.country_code.length === 2) {
-      return data.country_code.toLowerCase();
-    }
-  } catch (e) {}
-
-  // 3. country.is (HTTPS)
-  try {
-    const data = await httpsGet(`https://api.country.is/${cleanIp}`);
+    const data = await httpsGet(`https://result-proxy.ru/countryAPI/api.php?ip=${cleanIp}`);
     if (data && data.country && data.country.length === 2) {
       return data.country.toLowerCase();
     }
-  } catch (e) {}
-
+  } catch (e) {
+    if (logger) logger.log(`[GEOIP] Ошибка получения страны: ${e.message}`, "error");
+  }
   return null;
 }
 
@@ -213,7 +190,7 @@ class ApiServer {
         return res.json({ country: "🏠" });
       }
 
-      const country = await detectCountryBackend(cleanIp);
+      const country = await detectCountryBackend(cleanIp, this.logger);
       res.json({ country: country || "🌐" });
     });
 
