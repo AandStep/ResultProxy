@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "ResultProxy",
+  "outputfilename": "ResultProxy",
+  "info": {
+    "productString": "ResultProxy",
+    "productVersion": "2.2.2",
+    "companyName": "ResultProxy",
+    "productDescription": "ResultProxy Application"
+  },
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "",
+    "email": "andbet18@gmail.com"
+  }
+}
