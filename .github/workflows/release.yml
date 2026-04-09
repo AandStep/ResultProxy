@@ -7,43 +7,56 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: windows-latest
 
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Install Dependencies
-        run: npm install
+      - name: Install Wails CLI
+        shell: pwsh
+        run: |
+          go install github.com/wailsapp/wails/v2/cmd/wails@latest
+          $goBin = "$(go env GOPATH)/bin"
+          "$goBin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
-      - name: Build frontend
-        run: npm run build
+      - name: Build Windows app and installer
+        shell: pwsh
+        run: wails build -clean -nsis -platform windows/amd64
 
-      - name: Build Assets
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --publish never
+      - name: Validate Windows artifacts
+        shell: pwsh
+        run: |
+          $portable = "build/bin/ResultProxy.exe"
+          $installer = Get-ChildItem -Path "build/bin" -Filter "*-installer.exe" | Select-Object -First 1
+          if (-not (Test-Path $portable)) {
+            Write-Error "Portable executable not found: $portable"
+            exit 1
+          }
+          if (-not $installer) {
+            Write-Error "Installer executable not found in build/bin"
+            exit 1
+          }
+          "PORTABLE_PATH=$portable" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "INSTALLER_PATH=build/bin/$($installer.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Upload Artifacts
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-${{ matrix.os }}
+          name: release-assets-windows
           path: |
-            release/*.exe
-            release/*.blockmap
-            release/*.dmg
-            release/*.AppImage
-            release/*.tar.gz
-            release/*.zip
-            release/latest*.yml
+            ${{ env.PORTABLE_PATH }}
+            ${{ env.INSTALLER_PATH }}
           retention-days: 1
 
   create-release:
@@ -73,8 +86,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: release-assets
-          pattern: release-assets-*
-          merge-multiple: true
+          name: release-assets-windows
 
       - name: Create GitHub Release
         id: create_release

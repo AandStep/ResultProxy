@@ -1,0 +1,1338 @@
+// Copyright (C) 2026 ResultProxy
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+package main
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"resultproxy-wails/internal/adblock"
+	"resultproxy-wails/internal/config"
+	"resultproxy-wails/internal/logger"
+	"resultproxy-wails/internal/proxy"
+	"resultproxy-wails/internal/system"
+)
+
+
+
+type App struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	log        *logger.Logger
+	crypto     *config.CryptoService
+	config     *config.Manager
+	proxy      *proxy.Manager
+	adblock    *adblock.Blocker
+	tray       *system.Tray
+	killSwitch system.KillSwitch
+	netmon     *system.NetMonitor
+
+	
+	trayIcon []byte
+
+	stateMu       sync.Mutex
+	quitRequested bool
+
+	trayHidden    atomic.Uint32
+	taskbarUnhook func()
+	smartProvider proxy.BlockedListProvider
+}
+
+
+func NewApp() *App {
+	return &App{
+		log:     logger.New(),
+		adblock: adblock.New(),
+	}
+}
+
+
+func (a *App) SetTrayIcon(icon []byte) {
+	a.trayIcon = icon
+}
+
+
+func (a *App) GetVersion() string {
+	return productVersionFromWailsJSON()
+}
+
+
+func (a *App) startup(ctx context.Context) {
+	a.ctx, a.cancel = context.WithCancel(ctx)
+
+	
+	a.log.SetEmitter(func(eventName string, data any) {
+		wailsRuntime.EventsEmit(a.ctx, eventName, data)
+	})
+
+	a.log.Info("ResultProxy запускается...")
+
+	
+	cs, err := config.NewCryptoService()
+	if err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка инициализации шифрования: %v", err))
+		return
+	}
+	a.crypto = cs
+
+	
+	a.config = config.NewManager(cs)
+	userDataPath := a.getUserDataPath()
+	if err := a.config.Init(userDataPath); err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка загрузки конфигурации: %v", err))
+	} else {
+		a.log.Success("Конфигурация загружена")
+	}
+
+	
+	a.proxy = proxy.NewManager(a.log)
+	a.proxy.Init(a.ctx)
+	rootDir := a.getAppRootDir()
+	a.initSmartBlockedDomains(userDataPath, rootDir)
+
+	
+	if err := a.adblock.LoadFromCache(userDataPath); err != nil {
+		a.log.Warning(fmt.Sprintf("Кэш AdBlock не загружен: %v", err))
+	}
+
+	
+	a.killSwitch = system.NewKillSwitch()
+
+	
+	a.netmon = system.NewNetMonitor(func(status system.NetworkStatus) {
+		wailsRuntime.EventsEmit(a.ctx, "network:status", status)
+		if status.Online {
+			a.log.Info("[СЕТЬ] Интернет-соединение восстановлено")
+		} else {
+			a.log.Warning("[СЕТЬ] Интернет-соединение потеряно")
+		}
+	})
+	a.netmon.Start(a.ctx)
+
+	
+	a.tray = system.NewTray(a.trayIcon, system.TrayCallbacks{
+		OnShowWindow: func() {
+			a.restoreMainWindow()
+		},
+		OnSelectProxy: func(proxyID string) {
+			if err := a.setLastSelectedProxy(proxyID); err != nil {
+				a.log.Warning(fmt.Sprintf("Не удалось сохранить выбор сервера в трее: %v", err))
+			}
+		},
+		OnConnectSelected: func(proxyID string) {
+			if err := a.connectFromTray(proxyID); err != nil {
+				a.log.Error(fmt.Sprintf("Ошибка подключения из трея: %v", err))
+			}
+		},
+		OnDisconnect: func() {
+			if err := a.Disconnect(); err != nil {
+				a.log.Error(fmt.Sprintf("Ошибка отключения из трея: %v", err))
+			}
+		},
+		OnQuit: func() {
+			a.markQuitRequested()
+			wailsRuntime.Quit(a.ctx)
+		},
+	})
+	a.tray.Start()
+	a.refreshTrayProxyList()
+	a.startTrayPingLoop()
+
+	
+	if system.DetectGPOConflict() {
+		a.log.Warning("[СИСТЕМА] Обнаружен конфликт с групповой политикой (GPO). Настройки прокси могут быть переопределены.")
+		wailsRuntime.EventsEmit(a.ctx, "system:gpo-conflict", true)
+	}
+
+	a.taskbarUnhook = system.StartTaskbarRestoreHook(a.ctx, system.TaskbarRestoreConfig{
+		ClassName: system.WailsWindowClassResultProxy,
+		IsHiddenToTray: func() bool {
+			return a.trayHidden.Load() != 0
+		},
+		OnRestore: func() {
+			a.restoreMainWindow()
+		},
+	})
+
+	a.log.Success("ResultProxy готов к работе")
+}
+
+
+func (a *App) shutdown(ctx context.Context) {
+	a.log.Info("ResultProxy завершает работу...")
+
+	if a.taskbarUnhook != nil {
+		a.taskbarUnhook()
+		a.taskbarUnhook = nil
+	}
+
+	
+	if a.netmon != nil {
+		a.netmon.Stop()
+	}
+
+	
+	if a.tray != nil {
+		a.tray.Stop()
+	}
+
+	
+	if a.killSwitch != nil && a.killSwitch.IsEnabled() {
+		_ = a.killSwitch.Disable()
+	}
+
+	
+	if a.proxy != nil {
+		a.proxy.Shutdown()
+	}
+
+	if a.cancel != nil {
+		a.cancel()
+	}
+}
+
+func (a *App) BeforeClose(ctx context.Context) bool {
+	a.stateMu.Lock()
+	quitRequested := a.quitRequested
+	a.stateMu.Unlock()
+	if quitRequested {
+		return false
+	}
+	a.trayHidden.Store(1)
+	wailsRuntime.WindowHide(ctx)
+	return true
+}
+
+
+
+
+func (a *App) GetConfig() (config.AppConfig, error) {
+	if a.config == nil {
+		return config.DefaultConfig(), nil
+	}
+	return a.config.GetConfig(), nil
+}
+
+
+func (a *App) SaveConfig(cfg config.AppConfig) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+	
+	
+	existing := a.config.GetConfig()
+	if cfg.Subscriptions == nil || (len(cfg.Subscriptions) == 0 && len(existing.Subscriptions) > 0) {
+		cfg.Subscriptions = existing.Subscriptions
+	}
+	if err := a.config.SaveConfig(cfg); err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка сохранения конфигурации: %v", err))
+		return err
+	}
+	a.log.Success("Конфигурация сохранена")
+	return nil
+}
+
+
+func (a *App) Connect(proxyDTO proxy.ProxyConfig, rules config.RoutingRules,
+	killSwitch, adBlock bool) (proxy.ConnectResultDTO, error) {
+
+	if a.proxy == nil {
+		return proxy.ConnectResultDTO{Success: false, Message: "Proxy manager not initialized"}, nil
+	}
+
+	cfg := a.config.GetConfig()
+	mode := proxy.ProxyMode(cfg.Settings.Mode)
+	dnsServers := append([]string(nil), cfg.Settings.DNSServers...)
+	if fromProxy := dnsServersFromProxyExtra(proxyDTO); len(fromProxy) > 0 {
+		dnsServers = fromProxy
+	}
+
+	result := a.proxy.Connect(
+		a.ctx,
+		proxyDTO,
+		mode,
+		proxy.RoutingMode(rules.Mode),
+		rules.Whitelist,
+		rules.AppWhitelist,
+		killSwitch,
+		adBlock,
+		false,
+		cfg.Settings.LocalPort,
+		dnsServers,
+		cfg.Settings.TunIPv4,
+	)
+
+	
+	if result.Success {
+		serverName := fmt.Sprintf("%s:%d", proxyDTO.IP, proxyDTO.Port)
+		if a.tray != nil {
+			a.tray.SetConnectedProxy(a.resolveProxyID(proxyDTO), serverName)
+		}
+		wailsRuntime.EventsEmit(a.ctx, "proxy:connected", proxyDTO)
+	}
+
+	return result, nil
+}
+
+func dnsServersFromProxyExtra(proxyDTO proxy.ProxyConfig) []string {
+	if len(proxyDTO.Extra) == 0 {
+		return nil
+	}
+	var extra map[string]interface{}
+	if err := json.Unmarshal(proxyDTO.Extra, &extra); err != nil || extra == nil {
+		return nil
+	}
+	readList := func(key string) []string {
+		v, ok := extra[key]
+		if !ok || v == nil {
+			return nil
+		}
+		out := []string{}
+		switch t := v.(type) {
+		case []interface{}:
+			for _, item := range t {
+				s := strings.TrimSpace(fmt.Sprint(item))
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		case []string:
+			for _, item := range t {
+				s := strings.TrimSpace(item)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		case string:
+			for _, part := range strings.Split(t, ",") {
+				s := strings.TrimSpace(part)
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		seen := make(map[string]struct{}, len(out))
+		uniq := make([]string, 0, len(out))
+		for _, s := range out {
+			if _, ok := seen[s]; ok {
+				continue
+			}
+			seen[s] = struct{}{}
+			uniq = append(uniq, s)
+		}
+		return uniq
+	}
+	if v := readList("dns_servers"); len(v) > 0 {
+		return v
+	}
+	if v := readList("dns"); len(v) > 0 {
+		return v
+	}
+	return nil
+}
+
+
+func (a *App) Disconnect() error {
+	if a.proxy == nil {
+		return nil
+	}
+	err := a.proxy.Disconnect()
+	if err == nil {
+		if a.tray != nil {
+			a.tray.SetDisconnected()
+		}
+		wailsRuntime.EventsEmit(a.ctx, "proxy:disconnected", nil)
+	}
+	return err
+}
+
+
+func (a *App) GetStatus() proxy.StatusDTO {
+	if a.proxy == nil {
+		return proxy.StatusDTO{Mode: proxy.ProxyModeProxy}
+	}
+	return a.proxy.GetStatus()
+}
+
+
+func (a *App) SetMode(mode string) error {
+	result, err := a.ApplyMode(mode)
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return errors.New(result.Message)
+	}
+	return nil
+}
+
+
+func (a *App) ApplyMode(mode string) (proxy.ConnectResultDTO, error) {
+	if mode != string(proxy.ProxyModeProxy) && mode != string(proxy.ProxyModeTunnel) {
+		return proxy.ConnectResultDTO{
+			Success: false,
+			Message: fmt.Sprintf("неподдерживаемый режим: %s", mode),
+		}, nil
+	}
+	if a.config == nil {
+		return proxy.ConnectResultDTO{Success: false, Message: "config manager not initialized"}, nil
+	}
+	if a.proxy == nil {
+		return proxy.ConnectResultDTO{Success: false, Message: "proxy manager not initialized"}, nil
+	}
+
+	cfg := a.config.GetConfig()
+	previousMode := cfg.Settings.Mode
+	cfg.Settings.Mode = mode
+	if err := a.config.SaveConfig(cfg); err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка сохранения режима: %v", err))
+		return proxy.ConnectResultDTO{Success: false, Message: fmt.Sprintf("Ошибка сохранения режима: %v", err)}, nil
+	}
+
+	status := a.proxy.GetStatus()
+	if status.CurrentProxy != nil {
+		prevProxy := *status.CurrentProxy
+		modeSwitchDNS := append([]string(nil), cfg.Settings.DNSServers...)
+		if fromProxy := dnsServersFromProxyExtra(prevProxy); len(fromProxy) > 0 {
+			modeSwitchDNS = fromProxy
+		}
+		result := a.proxy.Connect(
+			a.ctx,
+			prevProxy,
+			proxy.ProxyMode(mode),
+			proxy.RoutingMode(cfg.RoutingRules.Mode),
+			cfg.RoutingRules.Whitelist,
+			cfg.RoutingRules.AppWhitelist,
+			cfg.Settings.KillSwitch,
+			cfg.Settings.AdBlock,
+			false,
+			cfg.Settings.LocalPort,
+			modeSwitchDNS,
+			cfg.Settings.TunIPv4,
+		)
+		if result.Success {
+			serverName := fmt.Sprintf("%s:%d", status.CurrentProxy.IP, status.CurrentProxy.Port)
+			if a.tray != nil {
+				a.tray.SetConnectedProxy(a.resolveProxyID(*status.CurrentProxy), serverName)
+			}
+			wailsRuntime.EventsEmit(a.ctx, "proxy:connected", *status.CurrentProxy)
+		} else if !result.FallbackUsed {
+			
+			cfg.Settings.Mode = previousMode
+			_ = a.config.SaveConfig(cfg)
+			rollback := a.proxy.Connect(
+				a.ctx,
+				prevProxy,
+				proxy.ProxyMode(previousMode),
+				proxy.RoutingMode(cfg.RoutingRules.Mode),
+				cfg.RoutingRules.Whitelist,
+				cfg.RoutingRules.AppWhitelist,
+				cfg.Settings.KillSwitch,
+				cfg.Settings.AdBlock,
+				false,
+				cfg.Settings.LocalPort,
+				modeSwitchDNS,
+				cfg.Settings.TunIPv4,
+			)
+			if rollback.Success {
+				if a.tray != nil {
+					a.tray.SetConnectedProxy(a.resolveProxyID(prevProxy), fmt.Sprintf("%s:%d", prevProxy.IP, prevProxy.Port))
+				}
+				wailsRuntime.EventsEmit(a.ctx, "proxy:connected", prevProxy)
+			} else {
+				if a.tray != nil {
+					a.tray.SetDisconnected()
+				}
+				wailsRuntime.EventsEmit(a.ctx, "proxy:disconnected", nil)
+			}
+		}
+		return result, nil
+	}
+
+	if err := a.proxy.SetMode(proxy.ProxyMode(mode)); err != nil {
+		return proxy.ConnectResultDTO{Success: false, Message: fmt.Sprintf("Ошибка применения режима: %v", err)}, nil
+	}
+	return proxy.ConnectResultDTO{Success: true, Message: "Режим сохранен"}, nil
+}
+
+
+func (a *App) GetMode() string {
+	if a.proxy == nil {
+		return "proxy"
+	}
+	return string(a.proxy.GetMode())
+}
+
+
+func (a *App) PingProxy(ip string, port int, proxyType string) proxy.PingResultDTO {
+	if a.proxy == nil {
+		return proxy.PingResultDTO{}
+	}
+	return a.proxy.Ping(ip, port, proxyType)
+}
+
+
+func (a *App) GetLogs(page, size int) logger.LogPage {
+	return a.log.GetLogs(page, size)
+}
+
+
+func (a *App) ToggleKillSwitch(enable bool) error {
+	if a.proxy == nil {
+		return fmt.Errorf("proxy manager not initialized")
+	}
+
+	
+	if enable && a.killSwitch != nil {
+		status := a.proxy.GetStatus()
+		proxyAddr := ""
+		if status.CurrentProxy != nil {
+			proxyAddr = fmt.Sprintf("%s:%d", status.CurrentProxy.IP, status.CurrentProxy.Port)
+		}
+		if err := a.killSwitch.Enable(proxyAddr); err != nil {
+			a.log.Warning(fmt.Sprintf("[KILL SWITCH] Firewall недоступен, используем fallback: %v", err))
+			
+			return a.proxy.ToggleKillSwitch(enable)
+		}
+		if a.tray != nil {
+			a.tray.SetKillSwitchActive()
+		}
+		a.log.Warning("[KILL SWITCH] Активирована полная блокировка интернета (firewall)")
+		return nil
+	}
+
+	if !enable && a.killSwitch != nil && a.killSwitch.IsEnabled() {
+		if err := a.killSwitch.Disable(); err != nil {
+			a.log.Error(fmt.Sprintf("[KILL SWITCH] Ошибка отключения: %v", err))
+		}
+		a.log.Info("[KILL SWITCH] Деактивирован")
+	}
+
+	return a.proxy.ToggleKillSwitch(enable)
+}
+
+
+func (a *App) ToggleAdBlock(enable bool) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+	cfg := a.config.GetConfig()
+	cfg.Settings.AdBlock = enable
+	return a.config.SaveConfig(cfg)
+}
+
+
+func (a *App) SetAutostart(enable bool) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("getting executable path: %w", err)
+	}
+	if enable {
+		if err := system.EnableAutostart(exe); err != nil {
+			a.log.Error(fmt.Sprintf("[СИСТЕМА] Ошибка создания автозапуска: %v", err))
+			return err
+		}
+		a.log.Success("[СИСТЕМА] Автозапуск включен")
+	} else {
+		if err := system.DisableAutostart(); err != nil {
+			a.log.Warning(fmt.Sprintf("[СИСТЕМА] Ошибка удаления автозапуска: %v", err))
+			return err
+		}
+		a.log.Info("[СИСТЕМА] Автозапуск отключен")
+	}
+	return nil
+}
+
+
+func (a *App) IsAutostartEnabled() bool {
+	return system.IsAutostartEnabled()
+}
+
+
+func (a *App) UpdateRules(rules config.RoutingRules) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+	if err := a.config.UpdateRoutingRules(rules); err != nil {
+		return err
+	}
+	if a.proxy == nil {
+		return nil
+	}
+	status := a.proxy.GetStatus()
+	if !status.IsConnected || status.CurrentProxy == nil {
+		return nil
+	}
+
+	cur := *status.CurrentProxy
+	result := a.proxy.ReconnectWithRoutingRules(
+		a.ctx,
+		proxy.RoutingMode(rules.Mode),
+		rules.Whitelist,
+		rules.AppWhitelist,
+	)
+	if !result.Success {
+		a.log.Error(fmt.Sprintf("Ошибка применения правил маршрутизации: %s", result.Message))
+		if a.tray != nil {
+			a.tray.SetDisconnected()
+		}
+		wailsRuntime.EventsEmit(a.ctx, "proxy:disconnected", nil)
+		return fmt.Errorf("%s", result.Message)
+	}
+
+	a.log.Info("[PROXY] Правила маршрутизации применены")
+	if a.tray != nil {
+		a.tray.SetConnectedProxy(a.resolveProxyID(cur), fmt.Sprintf("%s:%d", cur.IP, cur.Port))
+	}
+	wailsRuntime.EventsEmit(a.ctx, "proxy:connected", cur)
+	return nil
+}
+
+
+func (a *App) ExportConfig() (string, error) {
+	if a.config == nil {
+		return "", fmt.Errorf("config manager not initialized")
+	}
+	cfg := a.config.GetConfig()
+	result, err := config.ExportConfig(cfg)
+	if err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка экспорта: %v", err))
+		return "", err
+	}
+	a.log.Success("Конфигурация экспортирована")
+	return result, nil
+}
+
+
+func (a *App) ImportConfig(data string) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+	imported, err := config.ImportConfig(data)
+	if err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка импорта: %v", err))
+		return err
+	}
+	existing := a.config.GetConfig()
+	merged := config.MergeImport(existing, imported)
+	if err := a.config.SaveConfig(merged); err != nil {
+		return err
+	}
+	a.log.Success(fmt.Sprintf("Импортировано %d прокси", len(imported.Proxies)))
+	wailsRuntime.EventsEmit(a.ctx, "config:updated", merged)
+	return nil
+}
+
+
+func (a *App) GetPlatform() string {
+	return runtime.GOOS
+}
+
+
+func (a *App) IsAdmin() bool {
+	return system.IsAdmin()
+}
+
+
+func (a *App) RestartAsAdmin() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("getting executable path: %w", err)
+	}
+	
+	err = system.RestartAsAdmin(exe)
+	if err == nil {
+		a.markQuitRequested()
+		wailsRuntime.Quit(a.ctx)
+	}
+	return err
+}
+
+
+func (a *App) GetNetworkTraffic() system.TrafficStats {
+	return system.GetNetworkTraffic()
+}
+
+
+func (a *App) GetNetworkStatus() system.NetworkStatus {
+	if a.netmon == nil {
+		return system.NetworkStatus{Online: true}
+	}
+	return a.netmon.GetStatus()
+}
+
+
+func (a *App) SyncProxies(proxies []config.ProxyEntry) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+	cfg := a.config.GetConfig()
+	cfg.Proxies = proxies
+	if err := a.config.SaveConfig(cfg); err != nil {
+		return err
+	}
+	a.refreshTrayProxyList()
+	return nil
+}
+
+
+func (a *App) DetectCountry(ip string) (string, error) {
+	
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(fmt.Sprintf("http://ip-api.com/json/%s?fields=status,countryCode", ip))
+	if err != nil {
+		return "Unknown", err
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Status      string `json:"status"`
+		CountryCode string `json:"countryCode"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "Unknown", err
+	}
+
+	if result.Status == "success" && result.CountryCode != "" {
+		return strings.ToLower(result.CountryCode), nil
+	}
+
+	return "Unknown", nil
+}
+
+
+
+func parseSubscriptionUserInfoHeader(v string) (upload, download, total, expire int64) {
+	if v == "" {
+		return 0, 0, 0, 0
+	}
+	for _, part := range strings.Split(v, ";") {
+		part = strings.TrimSpace(part)
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(kv[0]))
+		val := strings.TrimSpace(kv[1])
+		n, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			continue
+		}
+		switch key {
+		case "upload":
+			upload = n
+		case "download":
+			download = n
+		case "total":
+			total = n
+		case "expire":
+			expire = n
+		}
+	}
+	return upload, download, total, expire
+}
+
+
+func subscriptionIconCandidates(subURL string, h http.Header) []string {
+	parsed, err := url.Parse(subURL)
+	if err != nil {
+		parsed = nil
+	}
+	var out []string
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			return
+		}
+		for _, x := range out {
+			if x == s {
+				return
+			}
+		}
+		out = append(out, s)
+	}
+	for _, key := range []string{
+		"Profile-Icon-Url",
+		"Icon-Url",
+		"Subscription-Icon",
+		"Icon",
+		"Profile-Icon",
+	} {
+		v := strings.TrimSpace(h.Get(key))
+		if v == "" {
+			continue
+		}
+		low := strings.ToLower(v)
+		if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
+			add(v)
+			continue
+		}
+		if strings.HasPrefix(v, "/") && parsed != nil && parsed.Scheme != "" && parsed.Host != "" {
+			add(parsed.Scheme + "://" + parsed.Host + v)
+		}
+	}
+	for key, vals := range h {
+		if len(vals) == 0 {
+			continue
+		}
+		lk := strings.ToLower(key)
+		if !strings.Contains(lk, "icon") {
+			continue
+		}
+		v := strings.TrimSpace(vals[0])
+		low := strings.ToLower(v)
+		if strings.HasPrefix(low, "http://") || strings.HasPrefix(low, "https://") {
+			add(v)
+		}
+	}
+	return out
+}
+
+
+func inlineSmallImageFromURL(client *http.Client, imageURL string) string {
+	if imageURL == "" {
+		return ""
+	}
+	low := strings.ToLower(imageURL)
+	if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 ResultProxy/2.0")
+	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
+	resp, err := client.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		return ""
+	}
+	defer resp.Body.Close()
+	const maxBytes = 49152
+	buf, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil || len(buf) > maxBytes {
+		return ""
+	}
+	ct := strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
+	ct = strings.ToLower(ct)
+	if ct == "" || ct == "application/octet-stream" || ct == "binary/octet-stream" {
+		ct = http.DetectContentType(buf)
+	}
+	if !strings.HasPrefix(ct, "image/") {
+		return ""
+	}
+	return "data:" + ct + ";base64," + base64.StdEncoding.EncodeToString(buf)
+}
+
+func resolveSubscriptionIcon(client *http.Client, subURL string, h http.Header) string {
+	cands := subscriptionIconCandidates(subURL, h)
+	for _, cand := range cands {
+		if data := inlineSmallImageFromURL(client, cand); data != "" {
+			return data
+		}
+	}
+	if len(cands) > 0 {
+		return cands[0]
+	}
+	if fromPage := discoverIconFromSubscriptionPage(client, subURL); fromPage != "" {
+		return fromPage
+	}
+	return ""
+}
+
+func discoverIconFromSubscriptionPage(client *http.Client, subURL string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, subURL, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 ResultProxy/2.0")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	resp, err := client.Do(req)
+	if err != nil || resp == nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 262144))
+	if err != nil || len(body) == 0 {
+		return ""
+	}
+	ct := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
+	html := string(body)
+	if !strings.Contains(ct, "text/html") && !strings.HasPrefix(strings.TrimSpace(html), "<") {
+		return ""
+	}
+	reMeta := regexp.MustCompile(`(?is)<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']`)
+	reLink := regexp.MustCompile(`(?is)<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']`)
+	reImgLogo := regexp.MustCompile(`(?is)<img[^>]+src=["']([^"']+)["'][^>]*(?:logo|brand)|(?:logo|brand)[^>]*<img[^>]+src=["']([^"']+)["']`)
+	parsedBase, _ := url.Parse(subURL)
+	resolve := func(raw string) string {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return ""
+		}
+		u, err := url.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		if u.IsAbs() {
+			return u.String()
+		}
+		if parsedBase == nil {
+			return ""
+		}
+		return parsedBase.ResolveReference(u).String()
+	}
+	for _, re := range []*regexp.Regexp{reMeta, reLink, reImgLogo} {
+		m := re.FindStringSubmatch(html)
+		if len(m) == 0 {
+			continue
+		}
+		for i := 1; i < len(m); i++ {
+			candidate := resolve(m[i])
+			if candidate == "" {
+				continue
+			}
+			if data := inlineSmallImageFromURL(client, candidate); data != "" {
+				return data
+			}
+			return candidate
+		}
+	}
+	return ""
+}
+
+func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int64, int64, int64, int64, string, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(subURL)
+	if err != nil {
+		return nil, 0, 0, 0, 0, "", fmt.Errorf("fetching subscription: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, 0, 0, 0, 0, "", fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
+	}
+
+	up, down, tot, exp := parseSubscriptionUserInfoHeader(resp.Header.Get("Subscription-Userinfo"))
+	iconURL := resolveSubscriptionIcon(client, subURL, resp.Header)
+
+	bodyBytes := make([]byte, 0, 1024*64)
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			bodyBytes = append(bodyBytes, buf[:n]...)
+		}
+		if readErr != nil {
+			break
+		}
+	}
+
+	entries, err := proxy.ParseSubscriptionBody(string(bodyBytes))
+	if err != nil {
+		return nil, up, down, tot, exp, iconURL, err
+	}
+
+	providerName := extractProviderName(subURL)
+	baseID := time.Now().UnixMilli()
+	for i := range entries {
+		entries[i].SubscriptionURL = subURL
+		entries[i].Provider = providerName
+		entries[i].ID = fmt.Sprintf("%d", baseID+int64(i))
+	}
+
+	a.log.Success(fmt.Sprintf("Подписка загружена: %d серверов", len(entries)))
+	return entries, up, down, tot, exp, iconURL, nil
+}
+
+
+func (a *App) FetchSubscription(subURL string) ([]config.ProxyEntry, error) {
+	entries, _, _, _, _, _, err := a.fetchSubscriptionFromURL(subURL)
+	return entries, err
+}
+
+
+func (a *App) RefreshSubscription(subID string) ([]config.ProxyEntry, error) {
+	if a.config == nil {
+		return nil, fmt.Errorf("config manager not initialized")
+	}
+
+	cfg := a.config.GetConfig()
+	var sub *config.Subscription
+	for i := range cfg.Subscriptions {
+		if cfg.Subscriptions[i].ID == subID {
+			sub = &cfg.Subscriptions[i]
+			break
+		}
+	}
+	if sub == nil {
+		return nil, fmt.Errorf("subscription %s not found", subID)
+	}
+
+	entries, up, down, tot, exp, iconURL, err := a.fetchSubscriptionFromURL(sub.URL)
+	if err != nil {
+		return nil, fmt.Errorf("refreshing subscription %s: %w", sub.Name, err)
+	}
+
+	for i := range entries {
+		entries[i].Provider = sub.Name
+		entries[i].SubscriptionURL = sub.URL
+	}
+
+	for i := range cfg.Subscriptions {
+		if cfg.Subscriptions[i].ID == subID {
+			cfg.Subscriptions[i].UpdatedAt = time.Now().Format(time.RFC3339)
+			cfg.Subscriptions[i].TrafficUpload = up
+			cfg.Subscriptions[i].TrafficDownload = down
+			cfg.Subscriptions[i].TrafficTotal = tot
+			cfg.Subscriptions[i].ExpireUnix = exp
+			if iconURL != "" {
+				cfg.Subscriptions[i].IconURL = iconURL
+			}
+			break
+		}
+	}
+	if err := a.config.SaveConfig(cfg); err != nil {
+		a.log.Error(fmt.Sprintf("Ошибка сохранения после обновления подписки: %v", err))
+	}
+
+	a.log.Success(fmt.Sprintf("Подписка '%s' обновлена: %d серверов", sub.Name, len(entries)))
+	return entries, nil
+}
+
+
+func (a *App) AddSubscription(name, subURL string) ([]config.ProxyEntry, error) {
+	if a.config == nil {
+		return nil, fmt.Errorf("config manager not initialized")
+	}
+
+	cfg := a.config.GetConfig()
+	for _, s := range cfg.Subscriptions {
+		if s.URL == subURL {
+			return nil, fmt.Errorf("подписка с этим URL уже добавлена")
+		}
+	}
+
+	entries, up, down, tot, exp, iconURL, err := a.fetchSubscriptionFromURL(subURL)
+	if err != nil {
+		return nil, err
+	}
+
+	sub := config.Subscription{
+		ID:              fmt.Sprintf("%d", time.Now().UnixMilli()),
+		Name:            name,
+		URL:             subURL,
+		UpdatedAt:       time.Now().Format(time.RFC3339),
+		TrafficUpload:   up,
+		TrafficDownload: down,
+		TrafficTotal:    tot,
+		ExpireUnix:      exp,
+		IconURL:         iconURL,
+	}
+
+	for i := range entries {
+		entries[i].Provider = name
+	}
+
+	cfg.Subscriptions = append(cfg.Subscriptions, sub)
+	if err := a.config.SaveConfig(cfg); err != nil {
+		return nil, fmt.Errorf("saving subscription: %w", err)
+	}
+
+	a.log.Success(fmt.Sprintf("Подписка '%s' добавлена: %d серверов", name, len(entries)))
+	return entries, nil
+}
+
+
+func (a *App) DeleteSubscription(subID string) error {
+	if a.config == nil {
+		return fmt.Errorf("config manager not initialized")
+	}
+
+	cfg := a.config.GetConfig()
+	found := false
+	newSubs := make([]config.Subscription, 0, len(cfg.Subscriptions))
+	for _, s := range cfg.Subscriptions {
+		if s.ID == subID {
+			found = true
+			continue
+		}
+		newSubs = append(newSubs, s)
+	}
+	if !found {
+		return fmt.Errorf("subscription %s not found", subID)
+	}
+	cfg.Subscriptions = newSubs
+	return a.config.SaveConfig(cfg)
+}
+
+
+
+
+func extractProviderName(subURL string) string {
+	u, err := url.Parse(subURL)
+	if err != nil || u.Host == "" {
+		return "Subscription"
+	}
+	host := u.Hostname()
+	
+	host = strings.TrimPrefix(host, "www.")
+	
+	parts := strings.Split(host, ".")
+	if len(parts) >= 2 {
+		name := parts[len(parts)-2]
+		
+		if len(name) > 0 {
+			return strings.ToUpper(name[:1]) + name[1:]
+		}
+	}
+	return host
+}
+
+func (a *App) getUserDataPath() string {
+	appData := os.Getenv("APPDATA")
+	if appData != "" {
+		return filepath.Join(appData, "ResultProxy")
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "ResultProxy")
+}
+
+func (a *App) getAppRootDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return "."
+	}
+	return filepath.Dir(exe)
+}
+
+func (a *App) markQuitRequested() {
+	a.stateMu.Lock()
+	a.quitRequested = true
+	a.stateMu.Unlock()
+}
+
+func (a *App) restoreMainWindow() {
+	if a.ctx == nil {
+		return
+	}
+	a.trayHidden.Store(0)
+	wailsRuntime.WindowUnminimise(a.ctx)
+	wailsRuntime.WindowShow(a.ctx)
+	
+	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, true)
+	wailsRuntime.WindowSetAlwaysOnTop(a.ctx, false)
+}
+
+func (a *App) refreshTrayProxyList() {
+	if a.tray == nil || a.config == nil {
+		return
+	}
+	cfg := a.config.GetConfig()
+	selectedID := cfg.Settings.LastSelectedProxyID
+	status := a.GetStatus()
+	if status.IsConnected && status.CurrentProxy != nil {
+		a.tray.SetConnectedProxy(a.resolveProxyID(*status.CurrentProxy), fmt.Sprintf("%s:%d", status.CurrentProxy.IP, status.CurrentProxy.Port))
+	} else {
+		a.tray.SetDisconnected()
+	}
+	a.tray.UpdateProxyList(cfg.Proxies, selectedID)
+}
+
+func (a *App) setLastSelectedProxy(proxyID string) error {
+	if proxyID == "" || a.config == nil {
+		return nil
+	}
+	cfg := a.config.GetConfig()
+	if cfg.Settings.LastSelectedProxyID == proxyID {
+		return nil
+	}
+	cfg.Settings.LastSelectedProxyID = proxyID
+	if err := a.config.SaveConfig(cfg); err != nil {
+		return err
+	}
+	a.refreshTrayProxyList()
+	return nil
+}
+
+func (a *App) connectFromTray(proxyID string) error {
+	if proxyID == "" || a.config == nil {
+		return fmt.Errorf("proxy id is empty")
+	}
+	cfg := a.config.GetConfig()
+	var selected *config.ProxyEntry
+	for i := range cfg.Proxies {
+		if cfg.Proxies[i].ID == proxyID {
+			selected = &cfg.Proxies[i]
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("proxy %s not found", proxyID)
+	}
+	cfg.Settings.LastSelectedProxyID = proxyID
+	if err := a.config.SaveConfig(cfg); err != nil {
+		return err
+	}
+
+	result, err := a.Connect(proxy.ProxyConfig{
+		IP:       selected.IP,
+		Port:     selected.Port,
+		Type:     selected.Type,
+		Username: selected.Username,
+		Password: selected.Password,
+		URI:      selected.URI,
+		Extra:    selected.Extra,
+	}, cfg.RoutingRules, cfg.Settings.KillSwitch, cfg.Settings.AdBlock)
+	if err != nil {
+		return err
+	}
+	if !result.Success {
+		return errors.New(result.Message)
+	}
+	a.refreshTrayProxyList()
+	return nil
+}
+
+func (a *App) resolveProxyID(proxyDTO proxy.ProxyConfig) string {
+	if a.config == nil {
+		return ""
+	}
+	cfg := a.config.GetConfig()
+	for _, p := range cfg.Proxies {
+		if p.IP == proxyDTO.IP && p.Port == proxyDTO.Port && strings.EqualFold(p.Type, proxyDTO.Type) {
+			return p.ID
+		}
+	}
+	return ""
+}
+
+func (a *App) startTrayPingLoop() {
+	if a.ctx == nil || a.tray == nil || a.config == nil || a.proxy == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				cfg := a.config.GetConfig()
+				if len(cfg.Proxies) == 0 {
+					continue
+				}
+				pings := make(map[string]int64, len(cfg.Proxies))
+				for _, p := range cfg.Proxies {
+					res := a.proxy.Ping(p.IP, p.Port, p.Type)
+					if res.Reachable {
+						pings[p.ID] = res.LatencyMs
+					} else {
+						pings[p.ID] = -1
+					}
+				}
+				a.tray.UpdateProxyPings(pings)
+			}
+		}
+	}()
+}
+
+func (a *App) initSmartBlockedDomains(userDataPath, rootDir string) {
+	if a.proxy == nil {
+		return
+	}
+	cachePath := filepath.Join(userDataPath, "blocked_cache.json")
+	localPaths := []string{
+		filepath.Join(rootDir, "list-general.txt"),
+		filepath.Join(rootDir, "list-google.txt"),
+	}
+	a.smartProvider = proxy.NewHTTPBlockedListProvider()
+	result := proxy.ResolveBlockedDomains(a.ctx, a.smartProvider, cachePath, localPaths...)
+	router := a.proxy.GetRouter()
+	if router != nil && len(result.Domains) > 0 {
+		router.SetBlockedDomains(result.Domains)
+	}
+	if result.Country != "" {
+		a.log.Info(fmt.Sprintf("[SMART] Источник списков: %s (%s), записей: %d", result.Source, strings.ToUpper(result.Country), len(result.Domains)))
+	} else {
+		a.log.Info(fmt.Sprintf("[SMART] Источник списков: %s, записей: %d", result.Source, len(result.Domains)))
+	}
+	if result.Err != nil {
+		a.log.Warning(fmt.Sprintf("[SMART] Fallback: %v", result.Err))
+	}
+	a.startSmartBlockedRefresh(cachePath)
+}
+
+func (a *App) startSmartBlockedRefresh(cachePath string) {
+	if a.ctx == nil || a.proxy == nil || a.smartProvider == nil {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				res := proxy.RefreshRemoteBlockedDomains(a.ctx, a.smartProvider, cachePath)
+				if res.Err != nil {
+					a.log.Warning(fmt.Sprintf("[SMART] Не удалось обновить списки: %v", res.Err))
+					continue
+				}
+				router := a.proxy.GetRouter()
+				if router != nil && len(res.Domains) > 0 {
+					router.SetBlockedDomains(res.Domains)
+				}
+				if res.Country != "" {
+					a.log.Info(fmt.Sprintf("[SMART] Списки обновлены (%s), записей: %d", strings.ToUpper(res.Country), len(res.Domains)))
+				} else {
+					a.log.Info(fmt.Sprintf("[SMART] Списки обновлены, записей: %d", len(res.Domains)))
+				}
+			}
+		}
+	}()
+}

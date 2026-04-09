@@ -26,3 +26,12 @@ release
 
 # Claude Superpowers
 superpowers/
+
+# Build artifacts and local cache
+build/bin/*.exe
+build/bin/cache.db
+/cache.db
+build/windows/installer/tmp/*
+*.timestamp-*.mjs
+/tmp.exe
+*~
