@@ -5,7 +5,7 @@
 <h1 align="center">ResultProxy</h1>
 
 <p align="center">
-  <b>Desktop proxy client for Windows (and portable codebase for macOS/Linux) powered by Wails, Go, and sing-box.</b><br>
+  <b>Desktop proxy client for Windows (macOS/Linux support coming soon) powered by Wails, Go, and sing-box.</b><br>
   Routing, subscriptions, smart rules, and system integration in one app.
 </p>
 
@@ -35,7 +35,7 @@
 
 ResultProxy **3.0.0** is a native desktop application built with **[Wails v2](https://wails.io/)**. The UI is **React 18** with **Vite** and **Tailwind CSS**; traffic is handled by a **Go** backend and **[sing-box](https://github.com/SagerNet/sing-box)** (with project-specific build tags in `wails.json`). The interface is localized with **i18next** (English and Russian).
 
-**Prebuilt releases:** GitHub Actions currently publishes **Windows amd64** artifacts (portable `.exe` and NSIS installer) when a `v*` tag is pushed. **macOS and Linux** code paths exist in the repository, but automated release artifacts in CI are Windows-only unless you build locally.
+**Prebuilt releases:** GitHub Actions currently publishes **Windows amd64** artifacts (portable `.exe` and NSIS installer) when a `v*` tag is pushed. **macOS and Linux** code paths exist in the repository, but automated CI releases are currently Windows-only; other platforms will be available later due to the full migration of the project to the Go stack.
 
 ---
 
@@ -46,10 +46,10 @@ ResultProxy **3.0.0** is a native desktop application built with **[Wails v2](ht
 - **Subscription URLs:** add, refresh, remove; grouping by provider/country where metadata is available
 - **Import:** paste from clipboard or bulk import from `.txt` / `.csv` / `.conf`-style content
 - **Smart rules:** Global vs Smart routing; **domain** and **application** exclusions (nested rules supported in the engine)
-- **Kill Switch**, optional **ad blocking**, **disable QUIC** (where relevant), **autostart**
+- **Kill Switch**, optional **ad blocking**, **autostart**
 - **Encrypted export/import** of configuration (password-protected payload)
 - **Logs** view (frontend and backend messages)
-- **System tray** integration; **second instance** focuses the running app instead of starting twice (`main.go`)
+- **System tray** integration
 - **Update check** against `update.json` on GitHub (see [Updates](#updates))
 
 ---
@@ -66,7 +66,7 @@ ResultProxy **3.0.0** is a native desktop application built with **[Wails v2](ht
 - **WireGuard** and **AmneziaWG** require **Tunnel** mode; they are **not** available in plain Proxy mode (enforced in `internal/proxy/manager.go`).
 - **Tunnel** mode on Windows requires **running the app as Administrator** (privilege check before connect).
 - **Kill Switch** on Windows may require **administrator** privileges for firewall-style rules (`internal/system/killswitch_windows.go`).
-- Release notes in [`update.json`](./update.json) state that **VMESS, Trojan, and SS** are **less tested** than VLESS and some other stacks; report issues via your usual support channel if something fails.
+- **VMESS, Trojan, and SS** are **less tested** than VLESS and some other stacks; if you hit failures, contact **@resultpoint_manager** on Telegram.
 
 ---
 
@@ -124,7 +124,7 @@ Inspect connection and routing messages to diagnose issues.
 
 ### Settings
 
-**Autostart**, **Kill Switch**, **ad blocking**, **QUIC** handling (protocol-dependent), and **export/import** of settings with a password.
+**Autostart**, **Kill Switch**, **ad blocking**, and password-protected **export/import**.
 
 <p align="center">
   <img src="docs/images/readme/settings-en.png" width="720" alt="Settings">
@@ -177,7 +177,7 @@ Outputs land under `build/bin/` (see [`build/README.md`](./build/README.md)).
 
 ### CI releases
 
-The [`.github/workflows/release.yml`](./github/workflows/release.yml) workflow runs `wails build -clean -nsis -platform windows/amd64` and publishes GitHub Release assets.
+The [`.github/workflows/release.yml`](./.github/workflows/release.yml) workflow runs `wails build -clean -nsis -platform windows/amd64` and publishes GitHub Release assets.
 
 ---
 
