@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -43,6 +43,7 @@ const AppContent = () => {
         setShowProtocolModal,
         appDialog,
         closeAppDialog,
+        handleAppDialogConfirm,
     } = useConfigContext();
     const { updateAvailable, latestVersionData, currentVersion } =
         useCheckUpdate();
@@ -62,7 +63,7 @@ const AppContent = () => {
                 <div className="relative flex items-center justify-center">
                     <img
                         src={logo}
-                        alt="ResultProxy"
+                        alt="ResultV"
                         className="w-10 h-10 absolute drop-shadow-[0_0_15px_rgba(0,126,58,0.8)] z-10"
                     />
                     <div className="w-20 h-20 border-4 border-zinc-800 border-t-[#00A819] rounded-full animate-spin"></div>
@@ -109,7 +110,7 @@ const AppContent = () => {
                 confirmText={appDialog?.confirmText}
                 cancelText={appDialog?.cancelText}
                 onClose={() => closeAppDialog(false)}
-                onConfirm={() => closeAppDialog(true)}
+                onConfirm={handleAppDialogConfirm}
             />
         </MainLayout>
     );

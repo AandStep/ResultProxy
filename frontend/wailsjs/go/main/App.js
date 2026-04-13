@@ -38,6 +38,10 @@ export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
 
+export function GetLANIPs() {
+  return window['go']['main']['App']['GetLANIPs']();
+}
+
 export function GetLogs(arg1, arg2) {
   return window['go']['main']['App']['GetLogs'](arg1, arg2);
 }
@@ -100,6 +104,10 @@ export function SetAutostart(arg1) {
 
 export function SetMode(arg1) {
   return window['go']['main']['App']['SetMode'](arg1);
+}
+
+export function SetStartInTray(arg1) {
+  return window['go']['main']['App']['SetStartInTray'](arg1);
 }
 
 export function SetTrayIcon(arg1) {

@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const WailsWindowClassResultProxy = "ResultProxyMainWClass"
+const WailsWindowClassResultV = "ResultVMainWClass"
 
 const (
 	wmActivate   = 0x0006

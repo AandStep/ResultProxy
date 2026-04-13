@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -97,8 +98,8 @@ func TestManagerCorruptedFile(t *testing.T) {
 	mgr := NewManager(cs)
 
 	
-	if err := mgr.Init(tmpDir); err != nil {
-		t.Fatalf("Init with corrupted file should not fail: %v", err)
+	if err := mgr.Init(tmpDir); err == nil || !errors.Is(err, ErrDecryptFailed) {
+		t.Fatalf("Init with corrupted file should return ErrDecryptFailed: %v", err)
 	}
 
 	cfg := mgr.GetConfig()
@@ -143,9 +144,6 @@ func TestEnsureDefaults(t *testing.T) {
 	}
 	if result.Settings.Theme != "dark" {
 		t.Errorf("Theme: got %q, want 'dark'", result.Settings.Theme)
-	}
-	if result.Settings.DisableQUIC {
-		t.Error("DisableQUIC: got true, want false")
 	}
 }
 
@@ -251,10 +249,140 @@ func TestManagerLoadLegacyConfigWithoutLastSelectedProxyID(t *testing.T) {
 	if cfg.Settings.LastSelectedProxyID != "" {
 		t.Fatalf("expected empty lastSelectedProxyId for legacy config, got %q", cfg.Settings.LastSelectedProxyID)
 	}
-	if cfg.Settings.DisableQUIC {
-		t.Fatal("expected disableQuic to be false for legacy config")
-	}
 	if len(cfg.Proxies) != 1 || cfg.Proxies[0].ID != "1" {
 		t.Fatalf("legacy proxies were not loaded correctly: %+v", cfg.Proxies)
+	}
+}
+
+func TestManagerInitMigratesLegacyConfig(t *testing.T) {
+	base := t.TempDir()
+	newDir := filepath.Join(base, "ResultV")
+	legacyDir := filepath.Join(base, "ResultProxy")
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+
+	cs := newTestCrypto()
+	legacyCfg := DefaultConfig()
+	legacyCfg.Proxies = []ProxyEntry{
+		{ID: "legacy-1", IP: "8.8.8.8", Port: 443, Type: "http", Name: "Legacy"},
+	}
+	enc, err := cs.Encrypt(legacyCfg)
+	if err != nil {
+		t.Fatalf("encrypt legacy config: %v", err)
+	}
+	legacyPath := filepath.Join(legacyDir, "proxy_config.json")
+	if err := os.WriteFile(legacyPath, []byte(enc), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	mgr := NewManager(cs)
+	if err := mgr.Init(newDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+	if len(cfg.Proxies) != 1 || cfg.Proxies[0].ID != "legacy-1" {
+		t.Fatalf("legacy config was not migrated: %+v", cfg.Proxies)
+	}
+	if _, err := os.Stat(filepath.Join(newDir, "proxy_config.json")); err != nil {
+		t.Fatalf("new config file missing after migration: %v", err)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy config file should be moved, err=%v", err)
+	}
+}
+
+func TestManagerInitPrefersNewConfigOverLegacy(t *testing.T) {
+	base := t.TempDir()
+	newDir := filepath.Join(base, "ResultV")
+	legacyDir := filepath.Join(base, "ResultProxy")
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
+		t.Fatalf("mkdir new dir: %v", err)
+	}
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+
+	cs := newTestCrypto()
+	newCfg := DefaultConfig()
+	newCfg.Proxies = []ProxyEntry{{ID: "new", IP: "1.1.1.1", Port: 443, Type: "http"}}
+	legacyCfg := DefaultConfig()
+	legacyCfg.Proxies = []ProxyEntry{{ID: "legacy", IP: "8.8.8.8", Port: 443, Type: "http"}}
+
+	newEnc, err := cs.Encrypt(newCfg)
+	if err != nil {
+		t.Fatalf("encrypt new config: %v", err)
+	}
+	legacyEnc, err := cs.Encrypt(legacyCfg)
+	if err != nil {
+		t.Fatalf("encrypt legacy config: %v", err)
+	}
+
+	newPath := filepath.Join(newDir, "proxy_config.json")
+	legacyPath := filepath.Join(legacyDir, "proxy_config.json")
+	if err := os.WriteFile(newPath, []byte(newEnc), 0o600); err != nil {
+		t.Fatalf("write new config: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(legacyEnc), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	mgr := NewManager(cs)
+	if err := mgr.Init(newDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+	if len(cfg.Proxies) != 1 || cfg.Proxies[0].ID != "new" {
+		t.Fatalf("new config must have priority, got: %+v", cfg.Proxies)
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("legacy config should remain untouched when new exists: %v", err)
+	}
+}
+
+func TestManagerInitPromotesLegacyWhenNewIsEmpty(t *testing.T) {
+	base := t.TempDir()
+	newDir := filepath.Join(base, "ResultV")
+	legacyDir := filepath.Join(base, "ResultProxy")
+	if err := os.MkdirAll(newDir, 0o700); err != nil {
+		t.Fatalf("mkdir new dir: %v", err)
+	}
+	if err := os.MkdirAll(legacyDir, 0o700); err != nil {
+		t.Fatalf("mkdir legacy dir: %v", err)
+	}
+
+	cs := newTestCrypto()
+	newCfg := DefaultConfig()
+	legacyCfg := DefaultConfig()
+	legacyCfg.Proxies = []ProxyEntry{{ID: "legacy", IP: "8.8.4.4", Port: 443, Type: "http"}}
+
+	newEnc, err := cs.Encrypt(newCfg)
+	if err != nil {
+		t.Fatalf("encrypt new config: %v", err)
+	}
+	legacyEnc, err := cs.Encrypt(legacyCfg)
+	if err != nil {
+		t.Fatalf("encrypt legacy config: %v", err)
+	}
+
+	newPath := filepath.Join(newDir, "proxy_config.json")
+	legacyPath := filepath.Join(legacyDir, "proxy_config.json")
+	if err := os.WriteFile(newPath, []byte(newEnc), 0o600); err != nil {
+		t.Fatalf("write new config: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, []byte(legacyEnc), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	mgr := NewManager(cs)
+	if err := mgr.Init(newDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+	cfg := mgr.GetConfig()
+	if len(cfg.Proxies) != 1 || cfg.Proxies[0].ID != "legacy" {
+		t.Fatalf("legacy config should replace empty new config, got: %+v", cfg.Proxies)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy config should be removed after promotion, err=%v", err)
 	}
 }

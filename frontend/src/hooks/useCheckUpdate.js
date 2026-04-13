@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@ import { compareVersions } from "../utils/versionCheck";
 import { GetVersion } from "../../wailsjs/go/main/App";
 
 const UPDATE_URL =
-    "https://raw.githubusercontent.com/AandStep/ResultProxy/main/update.json";
+    "https://raw.githubusercontent.com/AandStep/ResultV/main/update.json";
 
 
 async function resolveLocalVersion() {

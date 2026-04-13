@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -216,6 +216,14 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 
 	if e.running.Load() {
 		return fmt.Errorf("engine already running")
+	}
+
+	dataDir := cfg.DataDir
+	if dataDir == "" {
+		dataDir = resultProxyDataDir()
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return fmt.Errorf("data directory: %w", err)
 	}
 
 	

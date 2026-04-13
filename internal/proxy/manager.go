@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -80,7 +80,6 @@ type Manager struct {
 	proxy        *ProxyConfig
 	killSwitch   bool
 	adBlock      bool
-	disableQUIC  bool
 	routingMode  RoutingMode
 	whitelist    []string
 	appWhitelist []string
@@ -93,6 +92,7 @@ type Manager struct {
 
 	
 	localPort  int
+	listenLAN  bool
 	dnsServers []string
 	tunIPv4    string
 }
@@ -134,18 +134,18 @@ func (m *Manager) LoadBlockedLists(paths ...string) {
 
 func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode,
 	routingMode RoutingMode, whitelist, appWhitelist []string,
-	killSwitch, adBlock, disableQUIC bool,
-	localPort int, dnsServers []string, tunIPv4 string) ConnectResultDTO {
+	killSwitch, adBlock bool,
+	localPort int, listenLAN bool, dnsServers []string, tunIPv4 string) ConnectResultDTO {
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.connectLocked(ctx, proxy, mode, routingMode, whitelist, appWhitelist, killSwitch, adBlock, disableQUIC, localPort, dnsServers, tunIPv4)
+	return m.connectLocked(ctx, proxy, mode, routingMode, whitelist, appWhitelist, killSwitch, adBlock, localPort, listenLAN, dnsServers, tunIPv4)
 }
 
 func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode ProxyMode,
 	routingMode RoutingMode, whitelist, appWhitelist []string,
-	killSwitch, adBlock, disableQUIC bool,
-	localPort int, dnsServers []string, tunIPv4 string) ConnectResultDTO {
+	killSwitch, adBlock bool,
+	localPort int, listenLAN bool, dnsServers []string, tunIPv4 string) ConnectResultDTO {
 	if m.connected {
 		
 		m.disconnectLocked()
@@ -154,7 +154,7 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 	m.log.Info(fmt.Sprintf("[PROXY] Подключение к %s:%d (%s)...", proxy.IP, proxy.Port, proxy.Type))
 
 	proxyTypeLower := strings.ToLower(strings.TrimSpace(proxy.Type))
-	m.log.Info(fmt.Sprintf("[PROXY] Параметры подключения: mode=%s disableQUIC=%t proxyType=%s", mode, disableQUIC, proxyTypeLower))
+	m.log.Info(fmt.Sprintf("[PROXY] Параметры подключения: mode=%s proxyType=%s", mode, proxyTypeLower))
 
 	
 	
@@ -178,9 +178,6 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 			ErrorCode:    ConnectErrorTunPrivileges,
 		}
 	}
-	if mode == ProxyModeTunnel && disableQUIC && proxyTypeLower == "hysteria2" {
-		m.log.Warning("[PROXY] disableQUIC включен, но для hysteria2 блок udp:443 не применяется")
-	}
 	if proxyTypeLower != "wireguard" && proxyTypeLower != "amneziawg" && proxyTypeLower != "hysteria2" {
 		latency, reachable, _ := PingProxy(proxy.IP, proxy.Port)
 		if !reachable {
@@ -198,20 +195,25 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 		actualLocalPort = getFreeLocalPort(14081)
 	}
 
+	listenHost := "127.0.0.1"
+	if listenLAN {
+		listenHost = "0.0.0.0"
+	}
+
 	
 	engineCfg := EngineConfig{
 		Proxy:        proxy,
 		Mode:         mode,
-		ListenAddr:   fmt.Sprintf("127.0.0.1:%d", actualLocalPort),
+		ListenAddr:   fmt.Sprintf("%s:%d", listenHost, actualLocalPort),
 		RoutingMode:  routingMode,
 		Whitelist:    whitelist,
 		AppWhitelist: appWhitelist,
 		AdBlock:      adBlock,
 		KillSwitch:   killSwitch,
-		DisableQUIC:  disableQUIC,
 		LocalPort:    actualLocalPort,
 		DNSServers:   dnsServers,
 		TunIPv4:      tunIPv4,
+		DataDir:      resultProxyDataDir(),
 	}
 	if code, err := validateEngineConfig(engineCfg); err != nil {
 		return ConnectResultDTO{
@@ -238,7 +240,6 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 				m.proxy = &proxy
 				m.killSwitch = killSwitch
 				m.adBlock = adBlock
-				m.disableQUIC = disableQUIC
 				m.routingMode = routingMode
 				m.whitelist = append([]string(nil), whitelist...)
 				m.appWhitelist = append([]string(nil), appWhitelist...)
@@ -246,7 +247,8 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 				m.prevUp = 0
 				m.prevDown = 0
 				m.lastTick = time.Time{}
-				m.localPort = localPort
+					m.localPort = actualLocalPort
+					m.listenLAN = listenLAN
 				m.dnsServers = dnsServers
 				m.tunIPv4 = tunIPv4
 				m.emitStatus()
@@ -308,7 +310,6 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 	m.proxy = &proxy
 	m.killSwitch = killSwitch
 	m.adBlock = adBlock
-	m.disableQUIC = disableQUIC
 	m.routingMode = routingMode
 	m.whitelist = append([]string(nil), whitelist...)
 	m.appWhitelist = append([]string(nil), appWhitelist...)
@@ -316,7 +317,8 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 	m.prevUp = 0
 	m.prevDown = 0
 	m.lastTick = time.Time{}
-	m.localPort = localPort
+	m.localPort = actualLocalPort
+	m.listenLAN = listenLAN
 	m.dnsServers = dnsServers
 	m.tunIPv4 = tunIPv4
 
@@ -523,7 +525,6 @@ func (m *Manager) SetMode(mode ProxyMode) error {
 	proxy := m.proxy
 	killSwitch := m.killSwitch
 	adBlock := m.adBlock
-	disableQUIC := m.disableQUIC
 	routingMode := m.routingMode
 	whitelist := append([]string(nil), m.whitelist...)
 	appWhitelist := append([]string(nil), m.appWhitelist...)
@@ -547,8 +548,8 @@ func (m *Manager) SetMode(mode ProxyMode) error {
 			appWhitelist,
 			killSwitch,
 			adBlock,
-			disableQUIC,
 			m.localPort,
+			m.listenLAN,
 			m.dnsServers,
 			m.tunIPv4,
 		)
@@ -574,12 +575,12 @@ func (m *Manager) ReconnectWithRoutingRules(ctx context.Context, routingMode Rou
 	mode := m.mode
 	killSwitch := m.killSwitch
 	adBlock := m.adBlock
-	disableQUIC := m.disableQUIC
 	lPort := m.localPort
+	listenLAN := m.listenLAN
 	dServers := m.dnsServers
 	tIPv4 := m.tunIPv4
 
-	return m.connectLocked(ctx, p, mode, routingMode, whitelist, appWhitelist, killSwitch, adBlock, disableQUIC, lPort, dServers, tIPv4)
+	return m.connectLocked(ctx, p, mode, routingMode, whitelist, appWhitelist, killSwitch, adBlock, lPort, listenLAN, dServers, tIPv4)
 }
 
 

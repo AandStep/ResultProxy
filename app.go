@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -22,12 +22,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -67,6 +69,8 @@ type App struct {
 	trayHidden    atomic.Uint32
 	taskbarUnhook func()
 	smartProvider proxy.BlockedListProvider
+
+	startInTray bool
 }
 
 
@@ -80,6 +84,10 @@ func NewApp() *App {
 
 func (a *App) SetTrayIcon(icon []byte) {
 	a.trayIcon = icon
+}
+
+func (a *App) SetStartInTray(v bool) {
+	a.startInTray = v
 }
 
 
@@ -96,21 +104,33 @@ func (a *App) startup(ctx context.Context) {
 		wailsRuntime.EventsEmit(a.ctx, eventName, data)
 	})
 
-	a.log.Info("ResultProxy запускается...")
+	a.log.Info("ResultV запускается...")
 
-	
-	cs, err := config.NewCryptoService()
+	if err := system.MigrateLegacyUserData(); err != nil {
+		a.log.Warning(fmt.Sprintf("[CONFIG] Ошибка миграции legacy-данных: %v", err))
+	}
+
+	userDataPath := a.getUserDataPath()
+	a.log.Info(fmt.Sprintf("[CONFIG] UserDataDir: %s", userDataPath))
+
+	cs, err := config.NewCryptoService(userDataPath)
 	if err != nil {
 		a.log.Error(fmt.Sprintf("Ошибка инициализации шифрования: %v", err))
 		return
 	}
 	a.crypto = cs
+	if src := cs.KeySource(); src != "" {
+		a.log.Info(fmt.Sprintf("[CONFIG] Key source: %s", src))
+	}
 
 	
 	a.config = config.NewManager(cs)
-	userDataPath := a.getUserDataPath()
 	if err := a.config.Init(userDataPath); err != nil {
-		a.log.Error(fmt.Sprintf("Ошибка загрузки конфигурации: %v", err))
+		if errors.Is(err, config.ErrDecryptFailed) {
+			a.log.Warning(fmt.Sprintf("Конфигурация сброшена: %v", err))
+		} else {
+			a.log.Error(fmt.Sprintf("Ошибка загрузки конфигурации: %v", err))
+		}
 	} else {
 		a.log.Success("Конфигурация загружена")
 	}
@@ -176,7 +196,7 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.taskbarUnhook = system.StartTaskbarRestoreHook(a.ctx, system.TaskbarRestoreConfig{
-		ClassName: system.WailsWindowClassResultProxy,
+		ClassName: system.WailsWindowClassResultV,
 		IsHiddenToTray: func() bool {
 			return a.trayHidden.Load() != 0
 		},
@@ -185,12 +205,17 @@ func (a *App) startup(ctx context.Context) {
 		},
 	})
 
-	a.log.Success("ResultProxy готов к работе")
+	if a.startInTray {
+		a.trayHidden.Store(1)
+		wailsRuntime.WindowHide(a.ctx)
+	}
+
+	a.log.Success("ResultV готов к работе")
 }
 
 
 func (a *App) shutdown(ctx context.Context) {
-	a.log.Info("ResultProxy завершает работу...")
+	a.log.Info("ResultV завершает работу...")
 
 	if a.taskbarUnhook != nil {
 		a.taskbarUnhook()
@@ -287,8 +312,8 @@ func (a *App) Connect(proxyDTO proxy.ProxyConfig, rules config.RoutingRules,
 		rules.AppWhitelist,
 		killSwitch,
 		adBlock,
-		false,
 		cfg.Settings.LocalPort,
+		cfg.Settings.ListenLAN,
 		dnsServers,
 		cfg.Settings.TunIPv4,
 	)
@@ -439,8 +464,8 @@ func (a *App) ApplyMode(mode string) (proxy.ConnectResultDTO, error) {
 			cfg.RoutingRules.AppWhitelist,
 			cfg.Settings.KillSwitch,
 			cfg.Settings.AdBlock,
-			false,
 			cfg.Settings.LocalPort,
+			cfg.Settings.ListenLAN,
 			modeSwitchDNS,
 			cfg.Settings.TunIPv4,
 		)
@@ -463,8 +488,8 @@ func (a *App) ApplyMode(mode string) (proxy.ConnectResultDTO, error) {
 				cfg.RoutingRules.AppWhitelist,
 				cfg.Settings.KillSwitch,
 				cfg.Settings.AdBlock,
-				false,
 				cfg.Settings.LocalPort,
+				cfg.Settings.ListenLAN,
 				modeSwitchDNS,
 				cfg.Settings.TunIPv4,
 			)
@@ -695,6 +720,56 @@ func (a *App) GetNetworkStatus() system.NetworkStatus {
 	return a.netmon.GetStatus()
 }
 
+func (a *App) GetLANIPs() []string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 4)
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			default:
+				continue
+			}
+			ip4 := ip.To4()
+			if ip4 == nil {
+				continue
+			}
+			if ip4[0] == 127 {
+				continue
+			}
+			if ip4[0] == 169 && ip4[1] == 254 {
+				continue
+			}
+			s := ip4.String()
+			if _, ok := seen[s]; ok {
+				continue
+			}
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 
 func (a *App) SyncProxies(proxies []config.ProxyEntry) error {
 	if a.config == nil {
@@ -838,7 +913,7 @@ func inlineSmallImageFromURL(client *http.Client, imageURL string) string {
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 ResultProxy/2.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 ResultV/2.0")
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
 	resp, err := client.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
@@ -887,7 +962,7 @@ func discoverIconFromSubscriptionPage(client *http.Client, subURL string) string
 	if err != nil {
 		return ""
 	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 ResultProxy/2.0")
+	req.Header.Set("User-Agent", "Mozilla/5.0 ResultV/2.0")
 	req.Header.Set("Accept", "text/html,application/xhtml+xml")
 	resp, err := client.Do(req)
 	if err != nil || resp == nil {
@@ -1132,12 +1207,7 @@ func extractProviderName(subURL string) string {
 }
 
 func (a *App) getUserDataPath() string {
-	appData := os.Getenv("APPDATA")
-	if appData != "" {
-		return filepath.Join(appData, "ResultProxy")
-	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "ResultProxy")
+	return system.UserDataDir()
 }
 
 func (a *App) getAppRootDir() string {

@@ -8,6 +8,9 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: write
 
     steps:
       - name: Check out Git repository
@@ -56,8 +59,14 @@ jobs:
             Write-Error "makensis.exe not found after NSIS installation"
             exit 1
           }
+          $nsisRoot = Split-Path -Parent $makensis
+          $multiUser = Join-Path $nsisRoot "Include\MultiUser.nsh"
+          if (-not (Test-Path $multiUser)) {
+            Write-Error "NSIS MultiUser.nsh not found at $multiUser"
+            exit 1
+          }
           Split-Path -Parent $makensis | Out-File -FilePath $env:GITHUB_PATH -Append
-          "NSISDIR=$(Split-Path -Parent $makensis)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "NSISDIR=$nsisRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
           & $makensis /VERSION
 
       - name: Build Windows app and installer
@@ -94,6 +103,10 @@ jobs:
   create-release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+
     steps:
       - name: Check out Git repository
         uses: actions/checkout@v4
@@ -111,7 +124,7 @@ jobs:
           const releaseBody = 'Что нового в версии ' + update.version + '?\n\n' + notesText + '\n\n🌐 Официальный сайт: ' + new URL(update.downloadUrl).hostname;
           fs.writeFileSync('RELEASE_BODY.txt', releaseBody);
           const fsOut = require('fs');
-          fsOut.appendFileSync(process.env.GITHUB_OUTPUT, 'release_name=Result Proxy v' + update.version + ' - ' + title + '\n');
+          fsOut.appendFileSync(process.env.GITHUB_OUTPUT, 'release_name=ResultV v' + update.version + ' - ' + title + '\n');
           "
 
       - name: Download all workflow assets

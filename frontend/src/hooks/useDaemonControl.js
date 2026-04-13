@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
  */
 
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import wailsAPI from "../utils/wailsAPI";
 
 export const useDaemonControl = (
@@ -33,7 +34,9 @@ export const useDaemonControl = (
     daemonStatus,
     isSwitchingRef,
     addLog,
+    showAlertDialog,
 ) => {
+    const { t } = useTranslation();
     const disconnectOnly = useCallback(async () => {
         if (isSwitchingRef.current) return;
 
@@ -93,6 +96,24 @@ export const useDaemonControl = (
                 );
 
                 if (!res.success) {
+                    if (res.errorCode === "tun_privileges") {
+                        setIsConnecting(false);
+                        addLog(
+                            res.message || t("tunnel.adminMessage"),
+                            "error",
+                        );
+                        showAlertDialog({
+                            title: t("tunnel.adminTitle"),
+                            message: t("tunnel.adminMessage"),
+                            variant: "warning",
+                            confirmText: t("tunnel.restartAsAdmin"),
+                            onConfirmAction: () => wailsAPI.restartAsAdmin(),
+                        });
+                        setTimeout(() => {
+                            isSwitchingRef.current = false;
+                        }, 3000);
+                        return;
+                    }
                     const reason = res.reason ? ` Причина: ${res.reason}` : "";
                     const code = res.errorCode ? ` Код: ${res.errorCode}` : "";
                     throw new Error((res.message || "Unknown proxy connection error") + code + reason);
@@ -134,7 +155,9 @@ export const useDaemonControl = (
         setFailedProxy,
         isSwitchingRef,
         setIsConnecting,
-        updateSetting
+        updateSetting,
+        showAlertDialog,
+        t,
     ]);
 
     const selectAndConnect = useCallback(
@@ -167,6 +190,24 @@ export const useDaemonControl = (
                 );
 
                 if (!res.success) {
+                    if (res.errorCode === "tun_privileges") {
+                        setIsConnecting(false);
+                        addLog(
+                            res.message || t("tunnel.adminMessage"),
+                            "error",
+                        );
+                        showAlertDialog({
+                            title: t("tunnel.adminTitle"),
+                            message: t("tunnel.adminMessage"),
+                            variant: "warning",
+                            confirmText: t("tunnel.restartAsAdmin"),
+                            onConfirmAction: () => wailsAPI.restartAsAdmin(),
+                        });
+                        setTimeout(() => {
+                            isSwitchingRef.current = false;
+                        }, 2000);
+                        return;
+                    }
                     const reason = res.reason ? ` Причина: ${res.reason}` : "";
                     const code = res.errorCode ? ` Код: ${res.errorCode}` : "";
                     throw new Error((res.message || "Ошибка смены прокси: Узел отклонил подключение") + code + reason);
@@ -203,7 +244,9 @@ export const useDaemonControl = (
             setIsConnected,
             setIsConnecting,
             isSwitchingRef,
-            updateSetting
+            updateSetting,
+            showAlertDialog,
+            t,
         ],
     );
 

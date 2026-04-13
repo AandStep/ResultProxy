@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,6 +24,6 @@ const packageJson = JSON.parse(fs.readFileSync("./package.json", "utf-8"));
 export default defineConfig({
   plugins: [react()],
   define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version || "3.0.0"),
+    __APP_VERSION__: JSON.stringify(packageJson.version || "3.0.1"),
   }
 })

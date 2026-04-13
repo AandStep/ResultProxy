@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,11 +16,13 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import wailsAPI from "../utils/wailsAPI";
 import { detectCountry } from "../utils/network";
 import { mergeSubscriptionRefreshCountries } from "../utils/proxyParser";
 
 export const useAppConfig = (addLog) => {
+    const { t } = useTranslation();
     const [isConfigLoaded, setIsConfigLoaded] = useState(false);
     const [proxies, setProxies] = useState([]);
     const [routingRules, setRoutingRules] = useState({
@@ -34,7 +36,9 @@ export const useAppConfig = (addLog) => {
         adblock: false,
         mode: "proxy",
         language: "ru",
-        theme: "dark"
+        theme: "dark",
+        localPort: 0,
+        listenLan: false,
     });
     const [showProtocolModal, setShowProtocolModal] = useState(false);
     const [platform, setPlatform] = useState("windows");
@@ -50,6 +54,7 @@ export const useAppConfig = (addLog) => {
         cancelText: "",
     });
     const confirmResolverRef = useRef(null);
+    const dialogConfirmRef = useRef(null);
 
     const resetDialog = useCallback(() => ({
         isOpen: false,
@@ -62,6 +67,7 @@ export const useAppConfig = (addLog) => {
     }), []);
 
     const closeAppDialog = useCallback((confirmed = false) => {
+        dialogConfirmRef.current = null;
         if (confirmResolverRef.current) {
             confirmResolverRef.current(confirmed);
             confirmResolverRef.current = null;
@@ -74,6 +80,10 @@ export const useAppConfig = (addLog) => {
             confirmResolverRef.current(false);
             confirmResolverRef.current = null;
         }
+        dialogConfirmRef.current =
+            typeof options.onConfirmAction === "function"
+                ? options.onConfirmAction
+                : null;
         setAppDialog({
             isOpen: true,
             title: options.title || "",
@@ -85,7 +95,25 @@ export const useAppConfig = (addLog) => {
         });
     }, []);
 
+    const handleAppDialogConfirm = useCallback(async () => {
+        const fn = dialogConfirmRef.current;
+        dialogConfirmRef.current = null;
+        if (confirmResolverRef.current) {
+            confirmResolverRef.current(true);
+            confirmResolverRef.current = null;
+        }
+        setAppDialog(resetDialog());
+        if (typeof fn === "function") {
+            try {
+                await fn();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+    }, [resetDialog]);
+
     const showConfirmDialog = useCallback((options = {}) => {
+        dialogConfirmRef.current = null;
         if (confirmResolverRef.current) {
             confirmResolverRef.current(false);
             confirmResolverRef.current = null;
@@ -129,7 +157,7 @@ export const useAppConfig = (addLog) => {
                         setRoutingRules(config.routingRules);
                     }
                     if (config.settings) {
-                        setSettings({ ...config.settings, disableQuic: false });
+                        setSettings(config.settings);
                     }
                     if (config.subscriptions && Array.isArray(config.subscriptions)) {
                         setSubscriptions(config.subscriptions);
@@ -169,7 +197,28 @@ export const useAppConfig = (addLog) => {
             try {
                 const result = await wailsAPI.applyMode(value);
                 if (!result?.success) {
-                    throw new Error(result?.message || "Не удалось применить режим");
+                    if (result?.errorCode === "tun_privileges") {
+                        setSettings((prev) => ({
+                            ...prev,
+                            [key]: previousValue,
+                        }));
+                        addLog(
+                            result?.message ||
+                                t("tunnel.adminMessage"),
+                            "error",
+                        );
+                        showAlertDialog({
+                            title: t("tunnel.adminTitle"),
+                            message: t("tunnel.adminMessage"),
+                            variant: "warning",
+                            confirmText: t("tunnel.restartAsAdmin"),
+                            onConfirmAction: () => wailsAPI.restartAsAdmin(),
+                        });
+                        return;
+                    }
+                    throw new Error(
+                        result?.message || "Не удалось применить режим",
+                    );
                 }
                 if (result.tunnelFailed) {
                     const reason = result.reason || "неизвестная причина";
@@ -232,7 +281,7 @@ export const useAppConfig = (addLog) => {
             setSettings(nextSettings);
             persistSettings(nextSettings).catch(console.error);
         }
-    }, [settings, addLog, showAlertDialog, persistSettings]);
+    }, [settings, addLog, showAlertDialog, persistSettings, t]);
 
     
     useEffect(() => {
@@ -379,5 +428,6 @@ export const useAppConfig = (addLog) => {
         showAlertDialog,
         showConfirmDialog,
         closeAppDialog,
+        handleAppDialogConfirm,
     };
 };

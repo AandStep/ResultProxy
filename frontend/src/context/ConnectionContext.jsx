@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,8 +25,14 @@ import { useDaemonControl } from "../hooks/useDaemonControl";
 const ConnectionContext = createContext();
 
 export const ConnectionProvider = ({ children }) => {
-    const { proxies, routingRules, settings, updateSetting, isConfigLoaded } =
-        useConfigContext();
+    const {
+        proxies,
+        routingRules,
+        settings,
+        updateSetting,
+        isConfigLoaded,
+        showAlertDialog,
+    } = useConfigContext();
     const { addLog } = useLogContext();
 
     const [isConnected, setIsConnected] = useState(false);
@@ -64,6 +70,7 @@ export const ConnectionProvider = ({ children }) => {
         daemonStatus,
         isSwitchingRef,
         addLog,
+        showAlertDialog,
     );
 
     const value = {

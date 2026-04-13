@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -28,9 +28,9 @@ import (
 )
 
 const (
-	bridgeClass = "ResultProxySingletonBridgeCls"
-	bridgeTitle = "ResultProxySingletonBridgeWnd"
-	mutexName   = `Global\ResultProxyAppSingletonMutex_v2`
+	bridgeClass = "ResultVSingletonBridgeCls"
+	bridgeTitle = "ResultVSingletonBridgeWnd"
+	mutexName   = `Global\ResultVAppSingletonMutex_v2`
 	wmCopydata  = 0x004A
 	wmQuit      = 0x0012
 	copyMagic   = 0x52505349

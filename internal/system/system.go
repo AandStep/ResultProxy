@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -65,4 +65,13 @@ func RestartAsAdmin(exePath string, args ...string) error {
 		psArgs += fmt.Sprintf(` -ArgumentList '%s'`, strings.Join(args, " "))
 	}
 	return command("powershell", "-Command", psArgs).Start()
+}
+
+func ArgsStartInTray(args []string) bool {
+	for _, a := range args[1:] {
+		if a == "--autostart" || a == "--tray" {
+			return true
+		}
+	}
+	return false
 }

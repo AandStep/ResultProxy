@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -120,8 +120,8 @@ func TestConnect_TunnelStartFailureIncludesReasonAndFallbackFlag(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -167,8 +167,8 @@ func TestSetMode_ReconnectsWhenConnected(t *testing.T) {
 		[]string{"notepad.exe"},
 		true,
 		true,
-		true,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -214,8 +214,8 @@ func TestConnect_TunnelRequiresAdmin(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -256,8 +256,8 @@ func TestConnect_Hysteria2PostStartProbeFailure(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -304,8 +304,8 @@ func TestConnect_WireGuardTunnelFailsWhenE2EProbeFails(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -352,8 +352,8 @@ func TestConnect_WireGuardPostStartProbeSuccess(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -398,8 +398,8 @@ func TestConnect_AmneziaWGTunnelFailsWhenE2EProbeFails(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -450,8 +450,8 @@ func TestConnect_WireGuardTunnelE2EProbeStaysSingleAttempt(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -499,8 +499,8 @@ func TestConnect_AmneziaWGTunnelStopsSessionWhenE2EProbeFails(t *testing.T) {
 		nil,
 		false,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
@@ -550,8 +550,8 @@ func TestConnect_AmneziaWGTunnelClearsSystemProxy(t *testing.T) {
 		nil,
 		true,
 		false,
-		false,
 		0,
+		false,
 		nil,
 		"",
 	)
