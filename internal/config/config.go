@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,11 +17,14 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 )
+
+var ErrDecryptFailed = errors.New("не удалось расшифровать конфигурацию")
 
 
 type RoutingRules struct {
@@ -67,12 +70,12 @@ type AppSettings struct {
 	Autostart           bool   `json:"autostart"`
 	KillSwitch          bool   `json:"killswitch"`
 	AdBlock             bool   `json:"adblock"`
-	DisableQUIC         bool   `json:"disableQuic,omitempty"`
 	Mode                string   `json:"mode"`                           
 	Language            string   `json:"language"`                       
 	Theme               string   `json:"theme"`                          
 	LastSelectedProxyID string   `json:"lastSelectedProxyId,omitempty"`  
 	LocalPort           int      `json:"localPort,omitempty"`            
+	ListenLAN           bool     `json:"listenLan,omitempty"`
 	DNSServers          []string `json:"dnsServers,omitempty"`           
 	TunIPv4             string   `json:"tunIpv4,omitempty"`              
 }
@@ -126,11 +129,87 @@ func (m *Manager) Init(userDataPath string) error {
 	defer m.mu.Unlock()
 
 	m.configPath = filepath.Join(userDataPath, "proxy_config.json")
+	legacyConfigPath := filepath.Join(legacyUserDataDir(userDataPath), "proxy_config.json")
+	if err := migrateLegacyConfigFile(m.configPath, legacyConfigPath); err != nil {
+		return fmt.Errorf("migrating legacy config: %w", err)
+	}
+	if err := promoteLegacyConfigIfNeeded(m.configPath, legacyConfigPath, m.crypto); err != nil {
+		return fmt.Errorf("promoting legacy config: %w", err)
+	}
 
 	if err := m.loadLocked(); err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
 	return nil
+}
+
+func migrateLegacyConfigFile(newConfigPath, legacyConfigPath string) error {
+	if _, err := os.Stat(newConfigPath); err == nil {
+		return nil
+	}
+	if _, err := os.Stat(legacyConfigPath); err != nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(newConfigPath), 0o700); err != nil {
+		return err
+	}
+	if err := os.Rename(legacyConfigPath, newConfigPath); err == nil {
+		return nil
+	}
+	data, err := os.ReadFile(legacyConfigPath)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(newConfigPath, data, 0o600); err != nil {
+		return err
+	}
+	_ = os.Remove(legacyConfigPath)
+	return nil
+}
+
+func promoteLegacyConfigIfNeeded(newConfigPath, legacyConfigPath string, crypto *CryptoService) error {
+	if _, err := os.Stat(newConfigPath); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(legacyConfigPath); err != nil {
+		return nil
+	}
+
+	newData, err := os.ReadFile(newConfigPath)
+	if err != nil {
+		return err
+	}
+	legacyData, err := os.ReadFile(legacyConfigPath)
+	if err != nil {
+		return err
+	}
+
+	var newCfg AppConfig
+	if err := crypto.DecryptInto(string(newData), &newCfg); err != nil {
+		return nil
+	}
+	var legacyCfg AppConfig
+	if err := crypto.DecryptInto(string(legacyData), &legacyCfg); err != nil {
+		return nil
+	}
+
+	newScore := len(newCfg.Proxies) + len(newCfg.Subscriptions)
+	legacyScore := len(legacyCfg.Proxies) + len(legacyCfg.Subscriptions)
+	if newScore > 0 || legacyScore == 0 {
+		return nil
+	}
+	if err := os.WriteFile(newConfigPath, legacyData, 0o600); err != nil {
+		return err
+	}
+	_ = os.Remove(legacyConfigPath)
+	return nil
+}
+
+func legacyUserDataDir(userDataPath string) string {
+	if filepath.Base(userDataPath) != "ResultV" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(userDataPath), "ResultProxy")
 }
 
 
@@ -210,11 +289,9 @@ func (m *Manager) loadLocked() error {
 
 	var cfg AppConfig
 	if err := m.crypto.DecryptInto(string(data), &cfg); err != nil {
-		
-		
 		m.cache = DefaultConfig()
 		m.loaded = true
-		return nil
+		return fmt.Errorf("%w: %v", ErrDecryptFailed, err)
 	}
 
 	m.cache = ensureDefaults(cfg)

@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -132,8 +132,8 @@ func (t *Tray) onReady() {
 	if len(t.icon) > 0 {
 		systray.SetIcon(t.icon)
 	}
-	systray.SetTitle("ResultProxy")
-	systray.SetTooltip("ResultProxy — Отключено")
+	systray.SetTitle("ResultV")
+	systray.SetTooltip("ResultV — Отключено")
 
 	systray.SetWindowsTrayLeftClick(func() {
 		t.safeCall(func() {
@@ -149,7 +149,7 @@ func (t *Tray) onReady() {
 
 	systray.AddSeparator()
 
-	t.mShow = systray.AddMenuItem("Показать окно", "Открыть окно ResultProxy")
+	t.mShow = systray.AddMenuItem("Показать окно", "Открыть окно ResultV")
 	t.mDisconnect = systray.AddMenuItem("Отключить", "Отключить прокси")
 	t.mDisconnect.Disable() 
 
@@ -158,7 +158,7 @@ func (t *Tray) onReady() {
 	t.emptyItem = t.mServers.AddSubMenuItem("(список пуст)", "")
 	t.emptyItem.Disable()
 
-	t.mQuit = systray.AddMenuItem("Выход", "Закрыть ResultProxy")
+	t.mQuit = systray.AddMenuItem("Выход", "Закрыть ResultV")
 
 	
 	go t.eventLoop()
@@ -240,7 +240,7 @@ func (t *Tray) SetConnectedProxy(proxyID, serverName string) {
 	}
 
 	title := "🟢 " + serverName
-	tooltip := "ResultProxy — " + serverName
+	tooltip := "ResultV — " + serverName
 	if t.statusTitleCache != title {
 		t.mStatus.SetTitle(title)
 		t.statusTitleCache = title
@@ -266,7 +266,7 @@ func (t *Tray) SetDisconnected() {
 	}
 
 	title := "⚪ Отключено"
-	tooltip := "ResultProxy — Отключено"
+	tooltip := "ResultV — Отключено"
 	if t.statusTitleCache != title {
 		t.mStatus.SetTitle(title)
 		t.statusTitleCache = title
@@ -289,7 +289,7 @@ func (t *Tray) SetKillSwitchActive() {
 	}
 
 	title := "🔴 Kill Switch — интернет заблокирован"
-	tooltip := "ResultProxy — Kill Switch активен"
+	tooltip := "ResultV — Kill Switch активен"
 	if t.statusTitleCache != title {
 		t.mStatus.SetTitle(title)
 		t.statusTitleCache = title

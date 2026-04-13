@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,10 +27,10 @@ export const MobileHeader = () => {
       <div className="flex items-center space-x-2">
         <img
           src={logo}
-          alt="ResultProxy"
+          alt="ResultV"
           className="w-6 h-6 drop-shadow-[0_0_8px_rgba(0,126,58,0.5)]"
         />
-        <span className="text-lg font-bold text-white">ResultProxy</span>
+        <span className="text-lg font-bold text-white">ResultV</span>
       </div>
       {isConnected && (
         <div

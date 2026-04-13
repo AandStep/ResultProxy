@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -55,10 +55,10 @@ export const Sidebar = () => {
       <div className="px-6 pt-2 pb-3 mb-4 flex items-center space-x-3">
         <img
           src={logo}
-          alt="ResultProxy"
+          alt="ResultV"
           className="w-8 h-8 drop-shadow-[0_0_10px_rgba(0,126,58,0.5)]"
         />
-        <span className="text-xl font-bold text-white">ResultProxy</span>
+        <span className="text-xl font-bold text-white">ResultV</span>
       </div>
 
       {daemonStatus === "offline" && (

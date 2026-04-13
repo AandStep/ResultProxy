@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -45,6 +45,7 @@ const (
 
 type CryptoService struct {
 	key [32]byte
+	keySource string
 }
 
 
@@ -55,13 +56,18 @@ type secureEnvelope struct {
 	AuthTag  string `json:"authTag"`
 }
 
+func (cs *CryptoService) KeySource() string {
+	return cs.keySource
+}
 
-func NewCryptoService() (*CryptoService, error) {
-	machineID, err := getHardwareID()
+func NewCryptoService(userDataPath string) (*CryptoService, error) {
+	machineID, source, err := getHardwareID(userDataPath)
 	if err != nil {
 		return nil, fmt.Errorf("getting hardware ID: %w", err)
 	}
-	return NewCryptoServiceWithID(machineID), nil
+	cs := NewCryptoServiceWithID(machineID)
+	cs.keySource = source
+	return cs, nil
 }
 
 
@@ -183,7 +189,7 @@ func (cs *CryptoService) DecryptInto(rawStr string, dst any) error {
 var hardwareIDRegex = regexp.MustCompile(`[a-fA-F0-9\-]{8,}`)
 
 
-func getHardwareID() (string, error) {
+func getHardwareID(userDataPath string) (string, string, error) {
 	var id string
 	var err error
 
@@ -197,25 +203,17 @@ func getHardwareID() (string, error) {
 	}
 
 	if err == nil && id != "" {
-		return id, nil
+		return id, "hardware", nil
 	}
 
-	
-	return getOrCreateFallbackID()
-}
-
-func windowsMachineGUID() (string, error) {
-	out, err := exec.Command("reg", "query",
-		`HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Cryptography`,
-		"/v", "MachineGuid").Output()
-	if err != nil {
-		return "", fmt.Errorf("reading MachineGuid: %w", err)
+	fb, fbErr := getOrCreateFallbackID(userDataPath)
+	if fbErr != nil {
+		if err != nil {
+			return "", "", fmt.Errorf("hardware id failed: %v; fallback id failed: %w", err, fbErr)
+		}
+		return "", "", fbErr
 	}
-	match := hardwareIDRegex.FindString(string(out))
-	if match == "" {
-		return "", errors.New("MachineGuid not found in registry output")
-	}
-	return match, nil
+	return fb, "fallback", nil
 }
 
 func darwinPlatformUUID() (string, error) {
@@ -246,16 +244,8 @@ func linuxMachineID() (string, error) {
 	return id, nil
 }
 
-func getOrCreateFallbackID() (string, error) {
-	fallbackDir := os.Getenv("APPDATA")
-	if fallbackDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", fmt.Errorf("getting home dir: %w", err)
-		}
-		fallbackDir = filepath.Join(home, ".config")
-	}
-	fallbackPath := filepath.Join(fallbackDir, "resultProxy", ".machine-fallback-id")
+func getOrCreateFallbackID(userDataPath string) (string, error) {
+	fallbackPath := filepath.Join(userDataPath, ".machine-fallback-id")
 
 	
 	if data, err := os.ReadFile(fallbackPath); err == nil {
@@ -270,10 +260,10 @@ func getOrCreateFallbackID() (string, error) {
 
 	dir := filepath.Dir(fallbackPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return newID, nil 
+		return "", fmt.Errorf("creating fallback id dir: %w", err)
 	}
 	if err := os.WriteFile(fallbackPath, []byte(newID), 0o600); err != nil {
-		return newID, nil
+		return "", fmt.Errorf("writing fallback id: %w", err)
 	}
 
 	return newID, nil

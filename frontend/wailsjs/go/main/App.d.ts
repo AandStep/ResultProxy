@@ -23,6 +23,8 @@ export function FetchSubscription(arg1:string):Promise<Array<config.ProxyEntry>>
 
 export function GetConfig():Promise<config.AppConfig>;
 
+export function GetLANIPs():Promise<Array<string>>;
+
 export function GetLogs(arg1:number,arg2:number):Promise<logger.LogPage>;
 
 export function GetMode():Promise<string>;
@@ -54,6 +56,8 @@ export function SaveConfig(arg1:config.AppConfig):Promise<void>;
 export function SetAutostart(arg1:boolean):Promise<void>;
 
 export function SetMode(arg1:string):Promise<void>;
+
+export function SetStartInTray(arg1:boolean):Promise<void>;
 
 export function SetTrayIcon(arg1:Array<number>):Promise<void>;
 

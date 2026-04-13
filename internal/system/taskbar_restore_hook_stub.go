@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -21,7 +21,7 @@ package system
 import "context"
 
 
-const WailsWindowClassResultProxy = ""
+const WailsWindowClassResultV = ""
 
 
 type TaskbarRestoreConfig struct {

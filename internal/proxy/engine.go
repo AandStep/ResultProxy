@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -59,10 +59,10 @@ type EngineConfig struct {
 	AppWhitelist []string
 	AdBlock      bool
 	KillSwitch   bool
-	DisableQUIC  bool
 	LocalPort    int
 	DNSServers   []string
 	TunIPv4      string
+	DataDir      string
 }
 
 
@@ -84,12 +84,22 @@ type Engine interface {
 
 
 type SingBoxConfig struct {
-	Log       *SBLog       `json:"log,omitempty"`
-	DNS       *SBDNS       `json:"dns,omitempty"`
-	Endpoints []SBEndpoint `json:"endpoints,omitempty"`
-	Inbounds  []SBInbound  `json:"inbounds"`
-	Outbounds []SBOutbound `json:"outbounds"`
-	Route     *SBRoute     `json:"route,omitempty"`
+	Log          *SBLog          `json:"log,omitempty"`
+	DNS          *SBDNS          `json:"dns,omitempty"`
+	Endpoints    []SBEndpoint    `json:"endpoints,omitempty"`
+	Inbounds     []SBInbound     `json:"inbounds"`
+	Outbounds    []SBOutbound    `json:"outbounds"`
+	Route        *SBRoute        `json:"route,omitempty"`
+	Experimental *SBExperimental `json:"experimental,omitempty"`
+}
+
+type SBExperimental struct {
+	CacheFile *SBCacheFile `json:"cache_file,omitempty"`
+}
+
+type SBCacheFile struct {
+	Enabled bool   `json:"enabled,omitempty"`
+	Path    string `json:"path,omitempty"`
 }
 
 type SBLog struct {
@@ -268,6 +278,25 @@ type SBRouteRule struct {
 
 
 
+func effectiveDataDir(cfg EngineConfig) string {
+	if cfg.DataDir != "" {
+		return cfg.DataDir
+	}
+	return resultProxyDataDir()
+}
+
+func buildExperimentalCache(dataDir string) *SBExperimental {
+	if dataDir == "" {
+		return nil
+	}
+	return &SBExperimental{
+		CacheFile: &SBCacheFile{
+			Enabled: true,
+			Path:    filepath.Join(dataDir, "sing-box-cache.db"),
+		},
+	}
+}
+
 func appWhitelistPathRegexes(names []string) []string {
 	seen := make(map[string]struct{}, len(names))
 	var out []string
@@ -297,18 +326,20 @@ func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
 	
 	host, _ := splitHostPort(cfg.ListenAddr, "127.0.0.1", port)
 
+	dd := effectiveDataDir(cfg)
 	config := SingBoxConfig{
-		Log:       &SBLog{Level: "error", Disabled: true},
-		DNS:       buildDNS(cfg),
-		Endpoints: buildEndpoints(cfg.Proxy),
+		Log:          &SBLog{Level: "error", Disabled: true},
+		DNS:          buildDNS(cfg),
+		Endpoints:    buildEndpoints(cfg.Proxy),
 		Inbounds: []SBInbound{{
 			Type:       "mixed",
 			Tag:        "mixed-in",
 			Listen:     host,
 			ListenPort: port,
 		}},
-		Outbounds: buildOutbounds(cfg.Proxy),
-		Route:     buildRoute(cfg),
+		Outbounds:    buildOutbounds(cfg.Proxy),
+		Route:        buildRoute(cfg),
+		Experimental: buildExperimentalCache(dd),
 	}
 
 	return config
@@ -369,6 +400,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 		}
 	}
 
+	dd := effectiveDataDir(cfg)
 	config := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: false},
 		DNS:       buildDNS(cfg),
@@ -382,8 +414,9 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 			StrictRoute:         strictRoute,
 			RouteExcludeAddress: routeExclude,
 		}},
-		Outbounds: buildOutbounds(cfg.Proxy),
-		Route:     buildRoute(cfg),
+		Outbounds:    buildOutbounds(cfg.Proxy),
+		Route:        buildRoute(cfg),
+		Experimental: buildExperimentalCache(dd),
 	}
 
 	return config
@@ -519,22 +552,6 @@ func buildRoute(cfg EngineConfig) *SBRoute {
 		Action:   "hijack-dns",
 	})
 
-	
-	isHysteria2 := strings.EqualFold(strings.TrimSpace(cfg.Proxy.Type), "hysteria2")
-	shouldBlockClientQUIC := cfg.Mode == ProxyModeTunnel &&
-		cfg.DisableQUIC &&
-		!isHysteria2
-	if shouldBlockClientQUIC {
-		rules = append(rules, SBRouteRule{
-			Network:  []string{"udp"},
-			Port:     []int{443},
-			Outbound: "block",
-			Action:   "route",
-		})
-	}
-
-	
-	
 	
 	isEndpointProtocol := strings.EqualFold(strings.TrimSpace(cfg.Proxy.Type), "wireguard") ||
 		strings.EqualFold(strings.TrimSpace(cfg.Proxy.Type), "amneziawg")

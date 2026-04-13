@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,7 @@ import {
   GetVersion,
   GetNetworkStatus,
   GetNetworkTraffic,
+  GetLANIPs,
   GetLogs,
   GetMode,
   SetMode,
@@ -138,6 +139,15 @@ export const wailsAPI = {
     } catch (e) {
       console.error("wailsAPI.getNetworkTraffic error:", e);
       return { received: 0, sent: 0 };
+    }
+  },
+
+  getLANIPs: async () => {
+    try {
+      return await GetLANIPs();
+    } catch (e) {
+      console.error("wailsAPI.getLANIPs error:", e);
+      return [];
     }
   },
 

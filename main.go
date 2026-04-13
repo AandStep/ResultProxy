@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -18,6 +18,7 @@ package main
 import (
 	"embed"
 	"log"
+	"os"
 	"runtime"
 
 	"github.com/wailsapp/wails/v2"
@@ -35,7 +36,13 @@ var assets embed.FS
 var appIcon []byte
 
 func main() {
+	if runtime.GOOS == "windows" {
+		system.SetProcessAppUserModelID()
+	}
 	app := NewApp()
+	if system.ArgsStartInTray(os.Args) {
+		app.SetStartInTray(true)
+	}
 	app.SetTrayIcon(appIcon)
 
 	cleanupMessenger := system.InitSingletonMessenger(func() {
@@ -61,8 +68,8 @@ func main() {
 			WindowIsTranslucent:               false,
 			DisableWindowIcon:                 true,
 			DisableFramelessWindowDecorations: false,
-			WebviewUserDataPath:               "",
-			WindowClassName:                   system.WailsWindowClassResultProxy,
+			WebviewUserDataPath:               system.WebviewUserDataPath(),
+			WindowClassName:                   system.WailsWindowClassResultV,
 			Theme:                             windows.Dark,
 			CustomTheme: &windows.ThemeSettings{
 				DarkModeTitleBar:         windows.RGB(24, 24, 27),
@@ -80,7 +87,7 @@ func main() {
 	}
 	if runtime.GOOS != "windows" {
 		opts.SingleInstanceLock = &options.SingleInstanceLock{
-			UniqueId: "resultproxy-desktop",
+			UniqueId: "resultv-desktop",
 			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
 				app.restoreMainWindow()
 			},

@@ -1,4 +1,4 @@
-// Copyright (C) 2026 ResultProxy
+// Copyright (C) 2026 ResultV
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -133,37 +133,10 @@ func TestBuildRoute_TunnelMode_AmneziaWGDoesNotIncludeSelfDirectRule(t *testing.
 	}
 }
 
-func TestBuildRoute_TunnelMode_BlocksUDP443(t *testing.T) {
+func TestBuildRoute_TunnelMode_DoesNotBlockUDP443(t *testing.T) {
 	cfg := EngineConfig{
-		Mode:        ProxyModeTunnel,
-		DisableQUIC: true,
-		Proxy:       ProxyConfig{Type: "http"},
-	}
-	route := buildRoute(cfg)
-	if route == nil {
-		t.Fatal("expected non-nil route")
-	}
-
-	var found bool
-	for _, r := range route.Rules {
-		if r.Outbound != "block" || r.Action != "route" {
-			continue
-		}
-		if len(r.Network) == 1 && r.Network[0] == "udp" && len(r.Port) == 1 && r.Port[0] == 443 {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Fatalf("expected udp:443 block rule in tunnel mode, rules=%+v", route.Rules)
-	}
-}
-
-func TestBuildRoute_TunnelMode_DoesNotBlockUDP443WhenQUICEnabled(t *testing.T) {
-	cfg := EngineConfig{
-		Mode:        ProxyModeTunnel,
-		DisableQUIC: false,
-		Proxy:       ProxyConfig{Type: "http"},
+		Mode:  ProxyModeTunnel,
+		Proxy: ProxyConfig{Type: "http"},
 	}
 	route := buildRoute(cfg)
 	if route == nil {
@@ -175,16 +148,15 @@ func TestBuildRoute_TunnelMode_DoesNotBlockUDP443WhenQUICEnabled(t *testing.T) {
 			continue
 		}
 		if len(r.Network) == 1 && r.Network[0] == "udp" && len(r.Port) == 1 && r.Port[0] == 443 {
-			t.Fatalf("did not expect udp:443 block rule when QUIC is enabled, rules=%+v", route.Rules)
+			t.Fatalf("did not expect udp:443 block rule in tunnel mode, rules=%+v", route.Rules)
 		}
 	}
 }
 
 func TestBuildRoute_TunnelMode_Hysteria2DoesNotBlockUDP443(t *testing.T) {
 	cfg := EngineConfig{
-		Mode:        ProxyModeTunnel,
-		DisableQUIC: false,
-		Proxy:       ProxyConfig{Type: "hysteria2"},
+		Mode:  ProxyModeTunnel,
+		Proxy: ProxyConfig{Type: "hysteria2"},
 	}
 	route := buildRoute(cfg)
 	if route == nil {
@@ -196,26 +168,6 @@ func TestBuildRoute_TunnelMode_Hysteria2DoesNotBlockUDP443(t *testing.T) {
 		}
 		if len(r.Network) == 1 && r.Network[0] == "udp" && len(r.Port) == 1 && r.Port[0] == 443 {
 			t.Fatalf("did not expect udp:443 block for hysteria2, rules=%+v", route.Rules)
-		}
-	}
-}
-
-func TestBuildRoute_TunnelMode_Hysteria2DoesNotBlockUDP443WhenDisableQUICEnabled(t *testing.T) {
-	cfg := EngineConfig{
-		Mode:        ProxyModeTunnel,
-		DisableQUIC: true,
-		Proxy:       ProxyConfig{Type: "hysteria2"},
-	}
-	route := buildRoute(cfg)
-	if route == nil {
-		t.Fatal("expected non-nil route")
-	}
-	for _, r := range route.Rules {
-		if r.Outbound != "block" || r.Action != "route" {
-			continue
-		}
-		if len(r.Network) == 1 && r.Network[0] == "udp" && len(r.Port) == 1 && r.Port[0] == 443 {
-			t.Fatalf("did not expect udp:443 block for hysteria2 with disableQUIC enabled, rules=%+v", route.Rules)
 		}
 	}
 }

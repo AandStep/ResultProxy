@@ -32,12 +32,12 @@ export namespace config {
 	    autostart: boolean;
 	    killswitch: boolean;
 	    adblock: boolean;
-	    disableQuic?: boolean;
 	    mode: string;
 	    language: string;
 	    theme: string;
 	    lastSelectedProxyId?: string;
 	    localPort?: number;
+	    listenLan?: boolean;
 	    dnsServers?: string[];
 	    tunIpv4?: string;
 	
@@ -50,12 +50,12 @@ export namespace config {
 	        this.autostart = source["autostart"];
 	        this.killswitch = source["killswitch"];
 	        this.adblock = source["adblock"];
-	        this.disableQuic = source["disableQuic"];
 	        this.mode = source["mode"];
 	        this.language = source["language"];
 	        this.theme = source["theme"];
 	        this.lastSelectedProxyId = source["lastSelectedProxyId"];
 	        this.localPort = source["localPort"];
+	        this.listenLan = source["listenLan"];
 	        this.dnsServers = source["dnsServers"];
 	        this.tunIpv4 = source["tunIpv4"];
 	    }

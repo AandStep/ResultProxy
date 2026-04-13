@@ -5,13 +5,13 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "ResultProxy"
+    !define INFO_PROJECTNAME "ResultV"
 !endif
 !ifndef INFO_COMPANYNAME
-    !define INFO_COMPANYNAME "ResultProxy"
+    !define INFO_COMPANYNAME "ResultV"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "ResultProxy"
+    !define INFO_PRODUCTNAME "ResultV"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "3.0.0"

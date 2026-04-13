@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2026 ResultProxy
+ * Copyright (C) 2026 ResultV
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,7 +15,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Activity, Check, Shield, Download, Upload, Lock } from "lucide-react";
 import { SettingToggle } from "../components/ui/SettingToggle";
 import { encryptWithPassword, decryptWithPassword } from "../utils/crypto";
@@ -44,6 +44,10 @@ export const SettingsView = () => {
   });
   const [pwdInput, setPwdInput] = useState("");
   const [notify, setNotify] = useState(null);
+  const [localPortInput, setLocalPortInput] = useState(
+    settings?.localPort ? String(settings.localPort) : "",
+  );
+  const [lanIPs, setLanIPs] = useState([]);
 
   const showNotify = (msg, isError = false) => {
     setNotify({ msg, isError });
@@ -77,7 +81,7 @@ export const SettingsView = () => {
     downloadAnchorNode.setAttribute("href", dataStr);
     downloadAnchorNode.setAttribute(
       "download",
-      "resultproxy-secure-config.json",
+      "resultv-secure-config.json",
     );
     document.body.appendChild(downloadAnchorNode);
     downloadAnchorNode.click();
@@ -173,6 +177,42 @@ export const SettingsView = () => {
     }
   };
 
+  useEffect(() => {
+    setLocalPortInput(settings?.localPort ? String(settings.localPort) : "");
+  }, [settings?.localPort]);
+
+  useEffect(() => {
+    if (!settings?.listenLan) return;
+    wailsAPI.getLANIPs().then(setLanIPs).catch(() => setLanIPs([]));
+  }, [settings?.listenLan]);
+
+  const lanAddressText = useMemo(() => {
+    if (!settings?.listenLan) return "";
+    const port = Number(settings?.localPort || 0);
+    if (!port) {
+      return t("settings.lan_listen.addr_auto");
+    }
+    if (!lanIPs || lanIPs.length === 0) {
+      return t("settings.lan_listen.addr_unknown", { port });
+    }
+    return lanIPs.map((ip) => `${ip}:${port}`).join(", ");
+  }, [settings?.listenLan, settings?.localPort, lanIPs, t]);
+
+  const commitLocalPort = async () => {
+    const raw = String(localPortInput || "").trim();
+    if (raw === "") {
+      await updateSetting("localPort", 0);
+      return;
+    }
+    const n = parseInt(raw, 10);
+    if (!Number.isFinite(n) || n < 1 || n > 65535) {
+      showNotify(t("settings.lan_listen.port_invalid"), true);
+      setLocalPortInput(settings?.localPort ? String(settings.localPort) : "");
+      return;
+    }
+    await updateSetting("localPort", n);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-300 relative">
       <div>
@@ -212,6 +252,60 @@ export const SettingsView = () => {
           isOn={settings.adblock}
           onToggle={() => updateSetting("adblock", !settings.adblock)}
         />
+      </div>
+
+      <div className="space-y-4">
+        <SettingToggle
+          title={t("settings.lan_listen.toggle_title")}
+          description={t("settings.lan_listen.toggle_desc")}
+          isOn={!!settings.listenLan}
+          onToggle={() => updateSetting("listenLan", !settings.listenLan)}
+        />
+
+        <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-800">
+          <h3 className="text-white font-bold text-lg mb-2">
+            {t("settings.lan_listen.port_title")}
+          </h3>
+          <p className="text-zinc-500 text-sm mb-4">
+            {t("settings.lan_listen.port_desc")}
+          </p>
+
+          <div className="flex items-center gap-3">
+            <input
+              inputMode="numeric"
+              pattern="[0-9]*"
+              placeholder={t("settings.lan_listen.port_placeholder")}
+              className="w-40 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#007E3A] transition-colors focus:ring-0"
+              value={localPortInput}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "" || /^[0-9]+$/.test(v)) setLocalPortInput(v);
+              }}
+              onBlur={() => commitLocalPort()}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitLocalPort();
+                }
+              }}
+            />
+            <button
+              onClick={() => commitLocalPort()}
+              className="px-6 py-3 bg-zinc-800 hover:bg-zinc-700 text-white hover:text-[#00A819] rounded-xl font-medium transition-colors"
+            >
+              {t("settings.lan_listen.port_apply")}
+            </button>
+          </div>
+
+          {settings.listenLan && (
+            <div className="mt-4 text-sm text-zinc-400">
+              <div className="text-zinc-500 mb-1">
+                {t("settings.lan_listen.addr_title")}
+              </div>
+              <div className="break-words">{lanAddressText}</div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="p-6 bg-zinc-900 rounded-3xl border border-zinc-800 mt-10">
