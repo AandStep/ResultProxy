@@ -496,6 +496,7 @@ export const VPN_TYPES = [
     "WIREGUARD",
     "AMNEZIAWG",
     "HYSTERIA2",
+    "AUTO",
 ];
 
 const FLAG_EMOJI_PREFIX = /^[\u{1F1E6}-\u{1F1FF}][\u{1F1E6}-\u{1F1FF}]\s*/u;
@@ -685,6 +686,7 @@ export const sanitizeVpnExtraForEdit = (extra, { type, network, security, uuid, 
 
 export const getProtocolLabel = (proxy) => {
     if (!proxy?.extra || !isVpnType(proxy.type)) return proxy?.type || "";
+    if (proxy.type?.toUpperCase() === "AUTO") return "AUTO";
     const extra = typeof proxy.extra === "string" ? JSON.parse(proxy.extra) : proxy.extra;
     const type = proxy.type?.toUpperCase();
     const security = extra.security || "";
