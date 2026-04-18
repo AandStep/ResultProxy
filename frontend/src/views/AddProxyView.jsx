@@ -22,7 +22,6 @@ import { useConnectionContext } from "../context/ConnectionContext";
 import { useTranslation } from "react-i18next";
 import {
   parseProxies,
-  decryptHappLinks,
   isSubscriptionURL,
   isVpnType,
   subscriptionLabelFromURL,
@@ -117,7 +116,6 @@ export const AddProxyView = () => {
   };
 
   const processImport = async (text, sourceName = "") => {
-    text = await decryptHappLinks(text);
     if (isSubscriptionURL(text)) {
       setIsImporting(true);
       try {
@@ -242,8 +240,6 @@ export const AddProxyView = () => {
   const handleVpnUriSubmit = async () => {
     let text = vpnUri.trim();
     if (!text) return;
-
-    text = await decryptHappLinks(text);
 
     if (isSubscriptionURL(text)) {
       setVpnLoading(true);

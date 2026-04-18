@@ -138,29 +138,55 @@ func parseSubscriptionJSON(body string) ([]config.ProxyEntry, bool) {
 	if len(objects) == 0 {
 		return []config.ProxyEntry{}, true
 	}
-	entries := make([]config.ProxyEntry, 0, len(objects))
+	var entries []config.ProxyEntry
 	for _, obj := range objects {
-		entry, ok := parseJSONSubscriptionEntry(obj)
-		if ok {
-			entries = append(entries, entry)
+		parsed := parseJSONSubscriptionEntry(obj)
+		if len(parsed) > 0 {
+			entries = append(entries, parsed...)
 		}
 	}
 	return entries, true
 }
 
-func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, bool) {
-	remarks := asString(obj["remarks"])
+func parseJSONSubscriptionEntry(obj map[string]interface{}) []config.ProxyEntry {
+	var entries []config.ProxyEntry
+	
+	// Иногда obj сам является outbound'ом
+	protocol := asString(obj["protocol"])
+	if protocol != "" {
+		if entry, ok := parseJSONOutbound(obj, asString(obj["tag"])); ok {
+			entries = append(entries, entry)
+		}
+	}
+
+	// Иногда obj содержит массив outbounds
 	outbounds, ok := asSlice(obj["outbounds"])
-	if !ok || len(outbounds) == 0 {
+	if ok {
+		for _, ob := range outbounds {
+			if obMap, ok := asMap(ob); ok {
+				remarks := asString(obj["remarks"]) // Top-level remarks
+				if remarks == "" {
+					remarks = asString(obMap["tag"]) // Или используем tag как имя
+				}
+				if entry, ok := parseJSONOutbound(obMap, remarks); ok {
+					entries = append(entries, entry)
+				}
+			}
+		}
+	}
+
+	return entries
+}
+
+func parseJSONOutbound(outbound map[string]interface{}, name string) (config.ProxyEntry, bool) {
+	protocol := strings.ToLower(asString(outbound["protocol"]))
+	if protocol == "freedom" || protocol == "blackhole" || protocol == "dns" {
 		return config.ProxyEntry{}, false
 	}
-	firstOutbound, ok := asMap(outbounds[0])
-	if !ok {
-		return config.ProxyEntry{}, false
-	}
-	protocol := strings.ToLower(asString(firstOutbound["protocol"]))
-	settings, _ := asMap(firstOutbound["settings"])
-	stream, _ := asMap(firstOutbound["streamSettings"])
+
+	settings, _ := asMap(outbound["settings"])
+	stream, _ := asMap(outbound["streamSettings"])
+
 	switch protocol {
 	case "vless", "vmess":
 		vnext, ok := asSlice(settings["vnext"])
@@ -178,7 +204,6 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, 
 		if len(users) > 0 {
 			user, _ = asMap(users[0])
 		}
-		name := remarks
 		if name == "" {
 			name = strings.ToUpper(protocol)
 		}
@@ -255,7 +280,6 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, 
 		host := asString(server["address"])
 		port := asInt(server["port"])
 		password := asString(server["password"])
-		name := remarks
 		if name == "" {
 			name = "TROJAN"
 		}
@@ -269,6 +293,20 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, 
 		if tls, ok := asMap(stream["tlsSettings"]); ok {
 			if sni := asString(tls["serverName"]); sni != "" {
 				extra["sni"] = sni
+			}
+		}
+		if reality, ok := asMap(stream["realitySettings"]); ok {
+			if sni := asString(reality["serverName"]); sni != "" {
+				extra["sni"] = sni
+			}
+			if pbk := asString(reality["publicKey"]); pbk != "" {
+				extra["pbk"] = pbk
+			}
+			if sid := asString(reality["shortId"]); sid != "" {
+				extra["sid"] = sid
+			}
+			if fp := asString(reality["fingerprint"]); fp != "" {
+				extra["fp"] = fp
 			}
 		}
 		extraJSON, _ := json.Marshal(extra)
@@ -294,7 +332,6 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, 
 		port := asInt(server["port"])
 		password := asString(server["password"])
 		method := asString(server["method"])
-		name := remarks
 		if name == "" {
 			name = "Shadowsocks"
 		}
@@ -309,6 +346,44 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) (config.ProxyEntry, 
 			Type:     "SS",
 			Name:     name,
 			Password: password,
+			Country:  countryFromNameAndHost(name, host),
+			Extra:    extraJSON,
+		}, host != "" && port > 0
+	case "hysteria", "hysteria2", "hy2":
+		host := asString(settings["address"])
+		port := asInt(settings["port"])
+		
+		var auth string
+		if hySettings, ok := asMap(stream["hysteriaSettings"]); ok {
+			auth = asString(hySettings["auth"])
+		}
+		
+		if name == "" {
+			name = "HYSTERIA2"
+		}
+		
+		extra := map[string]interface{}{}
+		extra["password"] = auth
+		
+		if tls, ok := asMap(stream["tlsSettings"]); ok {
+			if sni := asString(tls["serverName"]); sni != "" {
+				extra["sni"] = sni
+			}
+			if fp := asString(tls["fingerprint"]); fp != "" {
+				extra["fp"] = fp
+			}
+			if alpn, ok := asSlice(tls["alpn"]); ok && len(alpn) > 0 {
+				extra["alpn"] = asString(alpn[0])
+			}
+		}
+		
+		extraJSON, _ := json.Marshal(extra)
+		return config.ProxyEntry{
+			IP:       host,
+			Port:     port,
+			Type:     "HYSTERIA2",
+			Name:     name,
+			Password: auth,
 			Country:  countryFromNameAndHost(name, host),
 			Extra:    extraJSON,
 		}, host != "" && port > 0

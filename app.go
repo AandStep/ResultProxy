@@ -1082,98 +1082,6 @@ func pickIconFromSubscriptionHTML(client *http.Client, subURL string, html strin
 	return ""
 }
 
-func loadHappApiKey() string {
-	if key := os.Getenv("HAPP_API_KEY"); key != "" {
-		fmt.Printf("[DEBUG] Using HAPP_API_KEY from environment\n")
-		return key
-	}
-	paths := []string{"frontend/.env", ".env", "../frontend/.env"}
-	for _, p := range paths {
-		if data, err := os.ReadFile(p); err == nil {
-			fmt.Printf("[DEBUG] Found .env file at %s\n", p)
-			for _, line := range strings.Split(string(data), "\n") {
-				line = strings.TrimSpace(line)
-				if strings.HasPrefix(line, "VITE_HAPP_API_KEY=") {
-					k := strings.TrimPrefix(line, "VITE_HAPP_API_KEY=")
-					fmt.Printf("[DEBUG] Loaded VITE_HAPP_API_KEY from %s\n", p)
-					return k
-				}
-				if strings.HasPrefix(line, "HAPP_API_KEY=") {
-					k := strings.TrimPrefix(line, "HAPP_API_KEY=")
-					fmt.Printf("[DEBUG] Loaded HAPP_API_KEY from %s\n", p)
-					return k
-				}
-			}
-		}
-	}
-	fmt.Printf("[DEBUG] No HAPP_API_KEY found in environment or .env files\n")
-	return ""
-}
-
-func (a *App) DecryptHappLink(text string, apiKey string) string {
-	if !strings.Contains(text, "happ://crypt") {
-		return text
-	}
-	client := &http.Client{Timeout: 10 * time.Second}
-	re := regexp.MustCompile(`happ://crypt[0-9]?/[A-Za-z0-9+/=]+`)
-
-	if apiKey == "" {
-		apiKey = loadHappApiKey()
-	}
-
-	return re.ReplaceAllStringFunc(text, func(match string) string {
-		decrypted, err := decryptHappCryptLink(client, match, apiKey)
-		if err != nil || decrypted == "" {
-			a.log.Warning(fmt.Sprintf("Failed to decrypt %s: %v", match, err))
-			return match
-		}
-		return decrypted
-	})
-}
-
-func decryptHappCryptLink(client *http.Client, cryptLink string, apiKey string) (string, error) {
-	fmt.Printf("[DEBUG] Decrypting happ link: %s\n", cryptLink)
-	reqBody, _ := json.Marshal(map[string]string{"link": cryptLink})
-	req, err := http.NewRequest(http.MethodPost, "https://api.sayori.cc/v1/decrypt", strings.NewReader(string(reqBody)))
-	if err != nil {
-		fmt.Printf("[DEBUG] Error creating request: %v\n", err)
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	if apiKey == "" {
-		apiKey = loadHappApiKey()
-	}
-	req.Header.Set("x-api-key", apiKey)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		fmt.Printf("[DEBUG] Error sending request: %v\n", err)
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("[DEBUG] API returned status %d\n", resp.StatusCode)
-		return "", fmt.Errorf("decrypt API returned status %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Success bool   `json:"success"`
-		Result  string `json:"result"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		fmt.Printf("[DEBUG] Error decoding response: %v\n", err)
-		return "", err
-	}
-	if !result.Success {
-		fmt.Printf("[DEBUG] API returned success=false\n")
-		return "", errors.New("decrypt API returned success=false")
-	}
-	fmt.Printf("[DEBUG] Successfully decrypted happ link\n")
-	return result.Result, nil
-}
-
 func discoverIconFromSubscriptionPage(client *http.Client, subURL string) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
@@ -1204,114 +1112,87 @@ func discoverIconFromSubscriptionPage(client *http.Client, subURL string) string
 func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int64, int64, int64, int64, string, string, error) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Timeout: 15 * time.Second, Jar: jar}
-	req, err := http.NewRequest(http.MethodGet, subURL, nil)
-	if err != nil {
-		return nil, 0, 0, 0, 0, "", "", fmt.Errorf("creating subscription request: %w", err)
-	}
-	req.Header.Set("User-Agent", fmt.Sprintf("ResultProxyPC/%s", productVersionFromWailsJSON()))
-	if hwid := a.subscriptionHWID(); hwid != "" {
-		req.Header.Set("x-hwid", hwid)
-	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, 0, 0, 0, 0, "", "", fmt.Errorf("fetching subscription: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, 0, 0, 0, 0, "", "", fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
-	}
-
-	profileTitle := parseSubscriptionHeaderText(resp.Header.Get("Profile-Title"))
-	up, down, tot, exp := parseSubscriptionUserInfoHeader(resp.Header.Get("Subscription-Userinfo"))
-	iconURL := resolveSubscriptionIcon(client, subURL, resp.Header)
-
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, up, down, tot, exp, iconURL, profileTitle, fmt.Errorf("reading subscription body: %w", err)
-	}
-	bodyStr := string(bodyBytes)
-
-	var firstDecrypted string
-	if strings.Contains(bodyStr, "happ://crypt") {
-		re := regexp.MustCompile(`happ://crypt[0-9]?/[A-Za-z0-9+/=]+`)
-		foundHapp := false
-
-		bodyStr = re.ReplaceAllStringFunc(bodyStr, func(match string) string {
-			decrypted, err := decryptHappCryptLink(client, match, "")
-			if err != nil {
-				a.log.Warning(fmt.Sprintf("Ошибка расшифровки happ:// ссылки: %v", err))
-				return match
-			}
-			foundHapp = true
-			if firstDecrypted == "" {
-				firstDecrypted = decrypted
-			}
-			return decrypted
-		})
-
-		if foundHapp && (strings.Contains(bodyStr, "<html") || strings.Contains(bodyStr, "<body")) {
-			fmt.Printf("[DEBUG] HTML detected, using decrypted content as body\n")
-			bodyStr = firstDecrypted
+	doFetch := func(userAgent string) ([]config.ProxyEntry, int64, int64, int64, int64, string, string, bool, error) {
+		req, err := http.NewRequest(http.MethodGet, subURL, nil)
+		if err != nil {
+			return nil, 0, 0, 0, 0, "", "", false, fmt.Errorf("creating subscription request: %w", err)
 		}
-	}
-
-	if firstDecrypted != "" {
-		display := firstDecrypted
-		if len(display) > 100 {
-			display = display[:100] + "..."
+		req.Header.Set("User-Agent", userAgent)
+		if hwid := a.subscriptionHWID(); hwid != "" {
+			req.Header.Set("x-hwid", hwid)
 		}
-		fmt.Printf("[DEBUG] Final body snippet: %s\n", display)
 
-		// КРИТИЧЕСКИЙ МОМЕНТ: если расшифровка вернула URL, нам нужно скачать его содержимое!
-		trimmedResult := strings.TrimSpace(firstDecrypted)
-		if strings.HasPrefix(trimmedResult, "http://") || strings.HasPrefix(trimmedResult, "https://") {
-			fmt.Printf("[DEBUG] Decryption returned a URL, fetching recursively with HWID: %s\n", trimmedResult)
-			req, err := http.NewRequest(http.MethodGet, trimmedResult, nil)
-			if err == nil {
-				req.Header.Set("User-Agent", fmt.Sprintf("ResultProxyPC/%s", productVersionFromWailsJSON()))
-				if hwid := a.subscriptionHWID(); hwid != "" {
-					req.Header.Set("x-hwid", hwid)
-				}
-				resp, err := client.Do(req)
-				if err == nil && resp.StatusCode == http.StatusOK {
-					newBody, err := io.ReadAll(resp.Body)
-					if err == nil {
-						bodyStr = string(newBody)
-						fmt.Printf("[DEBUG] Successfully fetched recursive body (%d bytes)\n", len(bodyStr))
-						
-						// ОБНОВЛЯЕМ МЕТАДАННЫЕ (трафик, срок действия, название, иконка) из заголовков рекурсивного ответа
-						u, d, t, e := parseSubscriptionUserInfoHeader(resp.Header.Get("Subscription-Userinfo"))
-						if u > 0 || d > 0 || t > 0 || e > 0 {
-							up, down, tot, exp = u, d, t, e
-						}
-						if pt := parseSubscriptionHeaderText(resp.Header.Get("Profile-Title")); pt != "" {
-							profileTitle = pt
-						}
-						if icon := resolveSubscriptionIcon(client, trimmedResult, resp.Header); icon != "" {
-							iconURL = icon
-						}
-					}
-					resp.Body.Close()
-				}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, 0, 0, 0, 0, "", "", false, fmt.Errorf("fetching subscription: %w", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, 0, 0, 0, 0, "", "", false, fmt.Errorf("subscription returned HTTP %d", resp.StatusCode)
+		}
+
+		profileTitle := parseSubscriptionHeaderText(resp.Header.Get("Profile-Title"))
+		up, down, tot, exp := parseSubscriptionUserInfoHeader(resp.Header.Get("Subscription-Userinfo"))
+		iconURL := resolveSubscriptionIcon(client, subURL, resp.Header)
+
+		bodyBytes, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return nil, up, down, tot, exp, iconURL, profileTitle, false, fmt.Errorf("reading subscription body: %w", err)
+		}
+		bodyStr := string(bodyBytes)
+
+		if iconURL == "" && strings.Contains(bodyStr, "<link") {
+			if fromBody := pickIconFromSubscriptionHTML(client, subURL, bodyStr); fromBody != "" {
+				iconURL = fromBody
 			}
 		}
-	}
-	
-	// Если после всех манипуляций иконка все еще пустая, пробуем найти её в финальном теле
-	if iconURL == "" && strings.Contains(bodyStr, "<link") {
-		if fromBody := pickIconFromSubscriptionHTML(client, subURL, bodyStr); fromBody != "" {
-			iconURL = fromBody
+
+		trimmed := strings.TrimSpace(strings.TrimPrefix(bodyStr, "\uFEFF"))
+		if trimmed == "" {
+			return nil, up, down, tot, exp, iconURL, profileTitle, false, subscriptionEmptyBodyError(resp.Header)
 		}
-	}
-	if strings.TrimSpace(strings.TrimPrefix(bodyStr, "\uFEFF")) == "" {
-		return nil, up, down, tot, exp, iconURL, profileTitle, subscriptionEmptyBodyError(resp.Header)
+
+		isJSON := strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[")
+
+		entries, err := proxy.ParseSubscriptionBody(bodyStr)
+		if err != nil {
+			return nil, up, down, tot, exp, iconURL, profileTitle, isJSON, err
+		}
+
+		return entries, up, down, tot, exp, iconURL, profileTitle, isJSON, nil
 	}
 
-	entries, err := proxy.ParseSubscriptionBody(bodyStr)
+	primaryUA := fmt.Sprintf("ResultV/%s", productVersionFromWailsJSON())
+	entries, up, down, tot, exp, iconURL, profileTitle, isJSON, err := doFetch(primaryUA)
 	if err != nil {
-		return nil, up, down, tot, exp, iconURL, profileTitle, err
+		return nil, 0, 0, 0, 0, "", "", err
+	}
+
+	hasHysteria := false
+	for _, e := range entries {
+		t := strings.ToUpper(e.Type)
+		if strings.Contains(t, "HYSTERIA") || strings.Contains(t, "HY2") {
+			hasHysteria = true
+			break
+		}
+	}
+
+	if !hasHysteria && !isJSON {
+		a.log.Info("No Hysteria2 found and not JSON. Retrying with Happ User-Agent...")
+		fbEntries, fbUp, fbDown, fbTot, fbExp, fbIcon, fbTitle, fbIsJSON, fbErr := doFetch("Happ/1.0")
+		if fbErr == nil && fbIsJSON && len(fbEntries) >= len(entries) {
+			a.log.Success(fmt.Sprintf("Fallback successful, got %d entries via Happ UA", len(fbEntries)))
+			entries = fbEntries
+			up, down, tot, exp = fbUp, fbDown, fbTot, fbExp
+			if fbIcon != "" {
+				iconURL = fbIcon
+			}
+			if fbTitle != "" {
+				profileTitle = fbTitle
+			}
+		}
 	}
 
 	providerName := extractProviderName(subURL)

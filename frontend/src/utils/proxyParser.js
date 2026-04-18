@@ -15,20 +15,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-export const decryptHappLinks = async (text) => {
-    if (!text || typeof text !== "string") return text;
-    if (!text.includes("happ://crypt")) return text;
-
-    try {
-        if (window.go && window.go.main && window.go.main.App && window.go.main.App.DecryptHappLink) {
-            return await window.go.main.App.DecryptHappLink(text, "");
-        }
-    } catch (err) {
-        console.error("Failed to decrypt happ link via backend", err);
-    }
-    return text;
-};
-
 export const parseProxies = (content) => {
     if (!content || typeof content !== "string") return [];
 
