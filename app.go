@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net"
 	"net/http"
@@ -1322,6 +1323,42 @@ func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int6
 		entries[i].SubscriptionURL = subURL
 		entries[i].Provider = providerName
 		entries[i].ID = fmt.Sprintf("%d", baseID+int64(i))
+	}
+
+	// Remove sentinel/routing-only entries that have no real host (0.0.0.0).
+	entries = proxy.FilterInvalidSubscriptionEntries(entries)
+
+	// Auto-mode detection: when every entry shares the same base name (ignoring
+	// a leading flag emoji), treat the subscription as an "auto" group — create a
+	// virtual AUTO entry that resolves to the best member at connect time, and
+	// rename each individual server to a unique "<flag> TYPE #N" label.
+	if len(entries) > 1 && proxy.AllSameBaseName(entries) {
+		_, sharedName := proxy.StripLeadingFlagEmoji(entries[0].Name)
+
+		memberIDs := make([]string, len(entries))
+		for i := range entries {
+			flagEmoji, _ := proxy.StripLeadingFlagEmoji(entries[i].Name)
+			typeName := strings.ToUpper(entries[i].Type)
+			if flagEmoji != "" {
+				entries[i].Name = fmt.Sprintf("%s %s #%d", flagEmoji, typeName, i+1)
+			} else {
+				entries[i].Name = fmt.Sprintf("%s #%d", typeName, i+1)
+			}
+			memberIDs[i] = entries[i].ID
+		}
+
+		membersJSON, _ := json.Marshal(map[string]interface{}{"members": memberIDs})
+		// Use a stable CRC32 ID so the AUTO entry survives subscription refreshes.
+		autoID := fmt.Sprintf("%x", crc32.ChecksumIEEE([]byte(subURL+"auto")))
+		autoEntry := config.ProxyEntry{
+			ID:              autoID,
+			Name:            sharedName,
+			Type:            "AUTO",
+			SubscriptionURL: subURL,
+			Provider:        providerName,
+			Extra:           json.RawMessage(membersJSON),
+		}
+		entries = append([]config.ProxyEntry{autoEntry}, entries...)
 	}
 
 	a.log.Success(fmt.Sprintf("Подписка загружена: %d серверов", len(entries)))

@@ -241,6 +241,8 @@
     "subActiveUntil": "Active until: {{date}}",
     "subRefreshHint": "If the subscription does not work, use the refresh button.",
     "noResults": "No proxies found matching your criteria.",
+    "autoType": "Auto",
+    "ipHidden": "Hidden",
     "status": {
       "connected": "Connected",
       "connect": "Connect"

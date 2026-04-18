@@ -898,3 +898,49 @@ func countryFromNameAndHost(displayName, hostname string) string {
 	}
 	return countryHintFromHostname(hostname)
 }
+
+// StripLeadingFlagEmoji splits "🇷🇺 impVPN Auto" into ("🇷🇺", "impVPN Auto").
+// Returns ("", s) when the string does not start with a regional-indicator pair.
+func StripLeadingFlagEmoji(s string) (emoji, rest string) {
+	s = strings.TrimSpace(s)
+	r1, w1 := utf8.DecodeRuneInString(s)
+	if r1 == utf8.RuneError || w1 == 0 || r1 < riMin || r1 > riMax {
+		return "", s
+	}
+	r2, w2 := utf8.DecodeRuneInString(s[w1:])
+	if r2 == utf8.RuneError || w2 == 0 || r2 < riMin || r2 > riMax {
+		return "", s
+	}
+	return s[:w1+w2], strings.TrimSpace(s[w1+w2:])
+}
+
+// AllSameBaseName returns true when every entry shares the same non-emoji name part.
+func AllSameBaseName(entries []config.ProxyEntry) bool {
+	if len(entries) == 0 {
+		return false
+	}
+	_, first := StripLeadingFlagEmoji(entries[0].Name)
+	if first == "" {
+		return false
+	}
+	for _, e := range entries[1:] {
+		_, base := StripLeadingFlagEmoji(e.Name)
+		if base != first {
+			return false
+		}
+	}
+	return true
+}
+
+// FilterInvalidSubscriptionEntries removes sentinel/routing-only entries
+// with no real host (IP == "0.0.0.0").
+func FilterInvalidSubscriptionEntries(entries []config.ProxyEntry) []config.ProxyEntry {
+	out := make([]config.ProxyEntry, 0, len(entries))
+	for _, e := range entries {
+		if e.IP == "0.0.0.0" {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}

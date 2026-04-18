@@ -24,6 +24,7 @@ import {
   Plus,
   ChevronDown,
   RefreshCw,
+  Zap,
 } from "lucide-react";
 import { FlagIcon } from "../components/ui/FlagIcon";
 import { useConfigContext } from "../context/ConfigContext";
@@ -293,22 +294,75 @@ export const ProxyListView = () => {
     }
   };
 
+  const handleCardConnect = (proxy) => {
+    if (proxy.type?.toUpperCase() === "AUTO") {
+      const extra =
+        typeof proxy.extra === "string"
+          ? JSON.parse(proxy.extra)
+          : proxy.extra;
+      const memberIds = (extra?.members || []).map(String);
+      const members = proxies.filter((p) => memberIds.includes(String(p.id)));
+      const validPings = members
+        .filter((p) => pings[p.id] && /^\d+/.test(String(pings[p.id])))
+        .sort(
+          (a, b) => parseInt(pings[a.id], 10) - parseInt(pings[b.id], 10),
+        );
+      const target = validPings[0] || members[0];
+      if (target) selectAndConnect(target);
+      return;
+    }
+    selectAndConnect(proxy);
+  };
+
   const renderProxyCard = (proxy) => {
     const isActive = isConnected && activeProxy?.id === proxy.id;
+    const isFromSubscription = Boolean(proxy.subscriptionUrl);
+    const isAutoProxy = proxy.type?.toUpperCase() === "AUTO";
     const protocolInfo = isVpnType(proxy.type) ? getProtocolLabel(proxy) : proxy.type;
+    const protocolLabel = isAutoProxy ? t("proxyList.autoType") : protocolInfo;
+
+    // For AUTO cards: compute best ping from member servers.
+    const autoBestPing = isAutoProxy
+      ? (() => {
+          const extra =
+            typeof proxy.extra === "string"
+              ? JSON.parse(proxy.extra)
+              : proxy.extra;
+          const memberIds = (extra?.members || []).map(String);
+          const arr = memberIds
+            .map((id) => pings[id])
+            .filter((p) => p && /^\d+/.test(String(p)));
+          return arr.length
+            ? arr.sort((a, b) => parseInt(a, 10) - parseInt(b, 10))[0]
+            : null;
+        })()
+      : null;
+
+    const pingDisplay = isAutoProxy
+      ? (autoBestPing ?? t("proxyList.pinging"))
+      : pings[proxy.id] || t("proxyList.pinging");
+
+    const pingIsError =
+      !isAutoProxy &&
+      ["Timeout", "Error", "Unavailable", "Refused"].includes(pings[proxy.id]);
+
+    const ipDisplay = isFromSubscription
+      ? t("proxyList.ipHidden")
+      : `${proxy.ip}:${proxy.port}`;
 
     return (
       <div
         key={proxy.id}
-        onClick={() => selectAndConnect(proxy)}
+        onClick={() => handleCardConnect(proxy)}
         className={`bg-zinc-900 p-4 rounded-[12px] border transition-all flex flex-col cursor-pointer group/card outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive ? "border-[#00A819] shadow-[0_0_20px_rgba(0,168,25,0.1)]" : "border-zinc-800 hover:border-[#00A819] hover:bg-zinc-800/30"}`}
       >
         <div className="flex items-start gap-3 mb-4">
           <div className="shrink-0 flex items-center justify-center w-10 h-10 bg-zinc-800/50 rounded-xl border border-zinc-700/50">
-            <FlagIcon
-              code={proxy.country}
-              className="w-6 rounded-[2px]"
-            />
+            {isAutoProxy ? (
+              <Zap className="w-5 h-5 text-[#00A819]" />
+            ) : (
+              <FlagIcon code={proxy.country} className="w-6 rounded-[2px]" />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -316,32 +370,34 @@ export const ProxyListView = () => {
                 {formatProxyDisplayName(proxy.name, proxy.country)}
               </h3>
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap bg-zinc-800 text-zinc-300 border border-zinc-700/60">
-                {protocolInfo}
+                {protocolLabel}
               </span>
             </div>
             <p className="text-xs text-zinc-400 font-mono mt-1 truncate">
-              {proxy.ip}:{proxy.port}
+              {ipDisplay}
             </p>
           </div>
         </div>
 
         <div className="flex items-center justify-between mt-auto pt-2 gap-2">
           <div
-            className={`text-xs flex items-center shrink-0 ${pings[proxy.id] === "Timeout" || pings[proxy.id] === "Error" || pings[proxy.id] === "Unavailable" ? "text-rose-500" : "text-zinc-500"}`}
+            className={`text-xs flex items-center shrink-0 ${pingIsError ? "text-rose-500" : "text-zinc-500"}`}
           >
             <Activity className="w-3.5 h-3.5 mr-1 shrink-0" />{" "}
-            {pings[proxy.id] || t("proxyList.pinging")}
+            {pingDisplay}
           </div>
           <div className="flex space-x-1.5 shrink-0">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                editProxy(proxy);
-              }}
-              className="p-2 bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-xl transition-colors shrink-0 border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
+            {!isFromSubscription && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  editProxy(proxy);
+                }}
+                className="p-2 bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-xl transition-colors shrink-0 border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -354,7 +410,7 @@ export const ProxyListView = () => {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                selectAndConnect(proxy);
+                handleCardConnect(proxy);
               }}
               className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors shrink-0 border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive ? "bg-[#00A819] text-zinc-950 font-bold" : "bg-[#007E3A]/10 text-[#00A819] hover:bg-[#007E3A]/20"}`}
             >
