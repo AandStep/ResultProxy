@@ -5,9 +5,16 @@
   "build:tags": "with_gvisor,with_utls,with_clash_api,with_quic,with_wireguard",
   "info": {
     "productString": "ResultV",
-    "productVersion": "3.1.0",
+    "productVersion": "3.1.1",
     "companyName": "ResultV",
-    "productDescription": "ResultV Application"
+    "productDescription": "ResultV Application",
+    "protocols": [
+      {
+        "scheme": "resultv",
+        "description": "ResultV deeplink",
+        "role": "Viewer"
+      }
+    ]
   },
   "frontend:install": "npm install",
   "frontend:build": "npm run build",

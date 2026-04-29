@@ -1,12 +1,12 @@
 {
-  "version": "3.1.0",
+  "version": "3.1.1",
   "releaseTitle": {
-    "ru": "Избранное, deeplink resultv://, новый партнёр impVPN, фикс багов",
-    "en": "Favorites, resultv:// deep links, new partner impVPN, bug fixes"
+    "ru": "Поддержка macOS и Linux (бета)",
+    "en": "macOS and Linux support (beta)"
   },
   "releaseNotes": {
-    "ru": "Добавлено избранное на главной и в списке серверов. Поддержка ссылок resultv:// — подписки импортируются прямо из браузера. Новый партнёр impVPN с промокодом result на скидку 20%. ",
-    "en": "Favorites added on the home screen and in the server list. resultv:// deep link support — subscriptions can be imported straight from the browser. New partner impVPN with promo code result for a 20% discount."
+    "ru": "ResultV теперь собирается под macOS и Linux в дополнение к Windows: системный прокси, kill switch, автозапуск, белые списки приложений, deeplink resultv:// — всё перенесено на новые платформы. ВНИМАНИЕ: сборки для macOS и Linux пока слабо протестированы и считаются сырыми. Мы рассчитываем на обратную связь от пользователей, чтобы выловить и исправить неточности в работе приложения — пишите о проблемах в Telegram или на GitHub.",
+    "en": "ResultV now builds for macOS and Linux in addition to Windows: system proxy, kill switch, autostart, app whitelist, resultv:// deep links — all ported to the new platforms. NOTE: macOS and Linux builds are lightly tested and considered a raw/beta release. We rely on user feedback to catch and fix rough edges — please report issues on Telegram or GitHub."
   },
   "downloadUrl": "https://result-proxy.ru/"
 }

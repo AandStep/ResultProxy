@@ -20,6 +20,7 @@ package system
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 func UserDataDir() string {
@@ -32,20 +33,38 @@ func WebviewUserDataPath() string {
 	return newPath
 }
 
-func userDataPaths() (string, string) {
-	appData := os.Getenv("APPDATA")
-	if appData != "" {
-		newPath := filepath.Join(appData, "ResultV")
-		legacyPath := filepath.Join(appData, "ResultProxy")
-		return newPath, legacyPath
+func userConfigBase() string {
+	if dir, err := os.UserConfigDir(); err == nil && dir != "" {
+		return dir
 	}
-	home, _ := os.UserHomeDir()
-	newPath := filepath.Join(home, ".config", "ResultV")
-	legacyPath := filepath.Join(home, ".config", "ResultProxy")
-	return newPath, legacyPath
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(home, "Library", "Application Support")
+		}
+		return filepath.Join(home, ".config")
+	}
+	return "."
+}
+
+func userCacheBase() string {
+	if dir, err := os.UserCacheDir(); err == nil && dir != "" {
+		return dir
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		if runtime.GOOS == "darwin" {
+			return filepath.Join(home, "Library", "Caches")
+		}
+		return filepath.Join(home, ".cache")
+	}
+	return "."
+}
+
+func userDataPaths() (string, string) {
+	base := userConfigBase()
+	return filepath.Join(base, "ResultV"), filepath.Join(base, "ResultProxy")
 }
 
 func webviewDataPaths() (string, string) {
-	newUserDataPath, legacyUserDataPath := userDataPaths()
-	return filepath.Join(newUserDataPath, "webview"), filepath.Join(legacyUserDataPath, "webview")
+	base := userCacheBase()
+	return filepath.Join(base, "ResultV", "webview"), filepath.Join(base, "ResultProxy", "webview")
 }

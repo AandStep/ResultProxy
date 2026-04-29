@@ -18,5 +18,8 @@
 
 package systray
 
-
+/*
+#cgo pkg-config: gtk+-3.0 ayatana-appindicator3-0.1
+#include "systray.h"
+*/
 import "C"

@@ -19,6 +19,7 @@ import React, { useState, useRef } from "react";
 import { Plus, Trash2, HelpCircle } from "lucide-react";
 import { useConfigContext } from "../context/ConfigContext";
 import { useTranslation } from "react-i18next";
+import { PickAppForWhitelist } from "../../wailsjs/go/main/App";
 
 export const RulesView = () => {
   const { t } = useTranslation();
@@ -80,6 +81,20 @@ export const RulesView = () => {
         setRules({ ...rules, appWhitelist: [...currentList, appName] });
       }
       e.target.value = "";
+    }
+  };
+
+  const pickAppNative = async () => {
+    try {
+      const appName = await PickAppForWhitelist();
+      if (!appName) return;
+      const currentList = rules.appWhitelist || [];
+      if (!currentList.includes(appName)) {
+        setRules({ ...rules, appWhitelist: [...currentList, appName] });
+      }
+    } catch (err) {
+      // Fallback to the legacy HTML file picker if the native dialog fails.
+      if (appFileInputRef.current) appFileInputRef.current.click();
     }
   };
 
@@ -235,7 +250,7 @@ export const RulesView = () => {
             onChange={handleFileSelect}
           />
           <button
-            onClick={() => appFileInputRef.current.click()}
+            onClick={pickAppNative}
             className="bg-[#007E3A] hover:bg-[#00A819] text-white px-6 font-bold rounded-xl transition-colors border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none shrink-0"
           >
             {t("rules.apps.choose_file")}

@@ -47,6 +47,8 @@ export function ImportConfig(arg1:string):Promise<void>;
 
 export function IsAdmin():Promise<boolean>;
 
+export function PickAppForWhitelist():Promise<string>;
+
 export function IsAutostartEnabled():Promise<boolean>;
 
 export function ParseSubscriptionText(arg1:string):Promise<Array<config.ProxyEntry>>;

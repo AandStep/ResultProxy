@@ -388,7 +388,7 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 		if err := m.sysProxy.Set(proxyAddr, whitelist); err != nil {
 			m.log.Warning(fmt.Sprintf("[PROXY] Ошибка установки системного прокси: %v", err))
 		} else {
-			m.log.Success("[СИСТЕМА] Прокси применен к Windows успешно")
+			m.log.Success("[СИСТЕМА] Системный прокси применён успешно")
 		}
 	} else if mode == ProxyModeTunnel && proxyTypeLower == "amneziawg" && m.sysProxy != nil {
 		if err := m.sysProxy.Disable(); err != nil {
@@ -531,7 +531,7 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 		if err := m.sysProxy.Set(proxyAddr, whitelist); err != nil {
 			m.log.Warning(fmt.Sprintf("[PROXY] Ошибка установки системного прокси: %v", err))
 		} else {
-			m.log.Success("[СИСТЕМА] Прокси применен к Windows успешно")
+			m.log.Success("[СИСТЕМА] Системный прокси применён успешно")
 		}
 	} else if mode == ProxyModeTunnel && proxyTypeLower == "amneziawg" && m.sysProxy != nil {
 		if err := m.sysProxy.Disable(); err != nil {

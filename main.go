@@ -32,9 +32,6 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
-//go:embed build/windows/icon.ico
-var appIcon []byte
-
 func main() {
 	if runtime.GOOS == "windows" {
 		system.SetProcessAppUserModelID()
@@ -95,8 +92,11 @@ func main() {
 	if runtime.GOOS != "windows" {
 		opts.SingleInstanceLock = &options.SingleInstanceLock{
 			UniqueId: "resultv-desktop",
-			OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 				app.restoreMainWindow()
+				if link := system.ExtractDeepLinkArg(data.Args); link != "" {
+					app.HandleDeepLink(link)
+				}
 			},
 		}
 	}

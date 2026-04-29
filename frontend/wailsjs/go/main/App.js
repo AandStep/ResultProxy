@@ -78,6 +78,10 @@ export function HandleDeepLink(arg1) {
   return window['go']['main']['App']['HandleDeepLink'](arg1);
 }
 
+export function PickAppForWhitelist() {
+  return window['go']['main']['App']['PickAppForWhitelist']();
+}
+
 export function ImportConfig(arg1) {
   return window['go']['main']['App']['ImportConfig'](arg1);
 }

@@ -15,7 +15,11 @@
 
 package systray
 
-
+/*
+#cgo CFLAGS: -DDARWIN -x objective-c -fobjc-arc
+#cgo LDFLAGS: -framework Cocoa
+#include "systray.h"
+*/
 import "C"
 
 import (
