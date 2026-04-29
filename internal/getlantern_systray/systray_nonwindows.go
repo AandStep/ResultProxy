@@ -18,7 +18,9 @@
 
 package systray
 
-
+/*
+#include "systray.h"
+*/
 import "C"
 
 import (
