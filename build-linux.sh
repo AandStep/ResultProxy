@@ -52,7 +52,10 @@ if command -v linuxdeploy >/dev/null 2>&1; then
   rm -rf "$APPDIR"
   mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps"
   cp "$BIN_PATH" "$APPDIR/usr/bin/resultv"
-  cp build/linux/resultv.desktop "$APPDIR/usr/share/applications/resultv.desktop"
+  # AppImage requires Exec= to be a relative command (just "resultv"),
+  # not the absolute /usr/bin/resultv used by the .deb/.rpm packages.
+  sed 's|^Exec=.*|Exec=resultv %u|' build/linux/resultv.desktop \
+    > "$APPDIR/usr/share/applications/resultv.desktop"
   cp public/logo.png "$APPDIR/usr/share/icons/hicolor/512x512/apps/resultv.png"
   ARCH=x86_64 linuxdeploy --appdir "$APPDIR" --output appimage --desktop-file "$APPDIR/usr/share/applications/resultv.desktop"
   mv ResultV*.AppImage "$OUT_DIR/" 2>/dev/null || true
