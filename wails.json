@@ -7,7 +7,14 @@
     "productString": "ResultV",
     "productVersion": "3.1.0",
     "companyName": "ResultV",
-    "productDescription": "ResultV Application"
+    "productDescription": "ResultV Application",
+    "protocols": [
+      {
+        "scheme": "resultv",
+        "description": "ResultV deeplink",
+        "role": "Viewer"
+      }
+    ]
   },
   "frontend:install": "npm install",
   "frontend:build": "npm run build",

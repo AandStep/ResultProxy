@@ -5,8 +5,8 @@
     "en": "Favorites, resultv:// deep links, new partner impVPN, bug fixes"
   },
   "releaseNotes": {
-    "ru": "Добавлено избранное на главной и в списке серверов. Поддержка ссылок resultv:// — подписки импортируются прямо из браузера. Новый партнёр impVPN с промокодом result на скидку 20%. ",
-    "en": "Favorites added on the home screen and in the server list. resultv:// deep link support — subscriptions can be imported straight from the browser. New partner impVPN with promo code result for a 20% discount."
+    "ru": "Добавлено избранное на главной и в списке серверов. Поддержка ссылок resultv:// — подписки импортируются прямо из браузера. Новый партнёр impVPN с промокодом result на скидку 20%. Пофикшены баги с некоторыми транспортами и протоколами.",
+    "en": "Favorites added on the home screen and in the server list. resultv:// deep link support — subscriptions can be imported straight from the browser. New partner impVPN with promo code result for a 20% discount. Bug fixes for some transports and protocols."
   },
   "downloadUrl": "https://result-proxy.ru/"
 }

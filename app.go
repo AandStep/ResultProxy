@@ -743,6 +743,42 @@ func (a *App) GetPlatform() string {
 	return runtime.GOOS
 }
 
+// PickAppForWhitelist opens a native file dialog so the user can choose an
+// application to add to the per-app whitelist. The returned string is the
+// canonical entry (basename of the executable on Windows/Linux, resolved
+// CFBundleExecutable on macOS) ready to be appended to RoutingRules.AppWhitelist.
+//
+// Returns an empty string if the user cancels the dialog.
+func (a *App) PickAppForWhitelist() (string, error) {
+	if a.ctx == nil {
+		return "", fmt.Errorf("app not started")
+	}
+	opts := wailsRuntime.OpenDialogOptions{
+		Title: "Select application",
+	}
+	switch runtime.GOOS {
+	case "windows":
+		opts.Filters = []wailsRuntime.FileFilter{
+			{DisplayName: "Executables (*.exe)", Pattern: "*.exe"},
+		}
+	case "darwin":
+		// Cocoa's NSOpenPanel treats .app bundles as files by default, so the
+		// user can pick "Brave.app" directly. Don't set a filter — it would
+		// hide the bundles from the dialog.
+		opts.DefaultDirectory = "/Applications"
+	case "linux":
+		opts.DefaultDirectory = "/usr/bin"
+	}
+	path, err := wailsRuntime.OpenFileDialog(a.ctx, opts)
+	if err != nil {
+		return "", err
+	}
+	if path == "" {
+		return "", nil
+	}
+	return system.NormalizeAppEntry(path), nil
+}
+
 func (a *App) IsAdmin() bool {
 	return system.IsAdmin()
 }

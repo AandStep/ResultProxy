@@ -5,9 +5,11 @@
 // the Free Software Foundation, either version 3 of the License, or
 // (at your option) any later version.
 
-//go:build !windows && !linux
+//go:build windows
 
-package system
+package main
 
-// RegisterResultVProtocol is a no-op on non-Windows platforms.
-func RegisterResultVProtocol() error { return nil }
+import _ "embed"
+
+//go:embed build/windows/icon.ico
+var appIcon []byte
