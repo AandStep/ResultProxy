@@ -21,6 +21,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: Install Linux build deps
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -29,6 +33,15 @@ jobs:
             build-essential pkg-config \
             libgtk-3-dev libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev
+
+      # `main.go` has `//go:embed all:frontend/dist`, which fails to compile
+      # if the directory is empty. Build the frontend first so vet/test see
+      # real files.
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
 
       - name: go vet
         run: go vet ./...
