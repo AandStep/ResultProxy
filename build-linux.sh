@@ -23,10 +23,13 @@ if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
 fi
 
 echo "==> wails build (linux/amd64) version=$VERSION"
+# webkit2_41 selects libwebkit2gtk-4.1 (Ubuntu 22.04+/24.04, Debian 12+).
+# Drop the tag if you target distros that still ship webkit2gtk-4.0.
+BUILD_TAGS="${WAILS_TAGS:-webkit2_41}"
 if [ -n "$LDFLAGS" ]; then
-  wails build -clean -platform linux/amd64 -ldflags "$LDFLAGS"
+  wails build -clean -platform linux/amd64 -tags "$BUILD_TAGS" -ldflags "$LDFLAGS"
 else
-  wails build -clean -platform linux/amd64
+  wails build -clean -platform linux/amd64 -tags "$BUILD_TAGS"
 fi
 
 BIN_PATH=$(find "$OUT_DIR" -maxdepth 2 -type f -name "ResultV" | head -n1)
