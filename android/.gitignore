@@ -1,0 +1,13 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+.cxx/
+captures/
+.externalNativeBuild/
+.kotlin/
+
+# Built artifacts (regenerated via `gomobile bind` in mobile/)
+libs/*.aar
+libs/*-sources.jar
