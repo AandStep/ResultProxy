@@ -144,6 +144,10 @@ type SBOutbound struct {
 	UUID       string           `json:"uuid,omitempty"`
 	AlterId    int              `json:"alter_id,omitempty"`
 	Flow       string           `json:"flow,omitempty"`
+	PacketEncoding      string `json:"packet_encoding,omitempty"`
+	GlobalPadding       bool   `json:"global_padding,omitempty"`
+	AuthenticatedLength bool   `json:"authenticated_length,omitempty"`
+	Security            string `json:"security,omitempty"`
 	UpMbps     int              `json:"up_mbps,omitempty"`
 	DownMbps   int              `json:"down_mbps,omitempty"`
 	Obfs       *SBHysteria2Obfs `json:"obfs,omitempty"`
@@ -160,12 +164,15 @@ type SBHysteria2Obfs struct {
 }
 
 type SBOutboundTLS struct {
-	Enabled    bool       `json:"enabled"`
-	ServerName string     `json:"server_name,omitempty"`
-	Insecure   bool       `json:"insecure,omitempty"`
-	ALPN       []string   `json:"alpn,omitempty"`
-	UTLS       *SBUTLS    `json:"utls,omitempty"`
-	Reality    *SBReality `json:"reality,omitempty"`
+	Enabled      bool       `json:"enabled"`
+	ServerName   string     `json:"server_name,omitempty"`
+	Insecure     bool       `json:"insecure,omitempty"`
+	ALPN         []string   `json:"alpn,omitempty"`
+	MinVersion   string     `json:"min_version,omitempty"`
+	MaxVersion   string     `json:"max_version,omitempty"`
+	CipherSuites []string   `json:"cipher_suites,omitempty"`
+	UTLS         *SBUTLS    `json:"utls,omitempty"`
+	Reality      *SBReality `json:"reality,omitempty"`
 }
 
 type SBEndpoint struct {
@@ -203,10 +210,14 @@ type SBWireGuardAmnezia struct {
 	S2    int    `json:"s2,omitempty"`
 	S3    int    `json:"s3,omitempty"`
 	S4    int    `json:"s4,omitempty"`
-	H1    uint32 `json:"h1,omitempty"`
-	H2    uint32 `json:"h2,omitempty"`
-	H3    uint32 `json:"h3,omitempty"`
-	H4    uint32 `json:"h4,omitempty"`
+	// H1-H4 are emitted as strings ("N" or "low-high") so that
+	// upstream sing-box-extended (>= v1.13.11-extended-2.0.0) can
+	// parse them into *Xbadoption.Range and randomize per packet
+	// for AmneziaWG 2.0 H-range support.
+	H1    string `json:"h1,omitempty"`
+	H2    string `json:"h2,omitempty"`
+	H3    string `json:"h3,omitempty"`
+	H4    string `json:"h4,omitempty"`
 	I1    string `json:"i1,omitempty"`
 	I2    string `json:"i2,omitempty"`
 	I3    string `json:"i3,omitempty"`
@@ -227,6 +238,7 @@ type SBReality struct {
 	Enabled   bool   `json:"enabled"`
 	PublicKey string `json:"public_key"`
 	ShortID   string `json:"short_id,omitempty"`
+	SpiderX   string `json:"spider_x,omitempty"`
 }
 
 type SBOutboundTransport struct {
@@ -239,8 +251,15 @@ type SBOutboundTransport struct {
 	XPaddingBytes string            `json:"x_padding_bytes,omitempty"`
 	Headers       map[string]string `json:"headers,omitempty"`
 
+	MaxEarlyData        int    `json:"max_early_data,omitempty"`
+	EarlyDataHeaderName string `json:"early_data_header_name,omitempty"`
+
 	UplinkHTTPMethod     string          `json:"uplink_http_method,omitempty"`
 	NoGRPCHeader         *bool           `json:"no_grpc_header,omitempty"`
+	IdleTimeout          string          `json:"idle_timeout,omitempty"`
+	PingTimeout          string          `json:"ping_timeout,omitempty"`
+	PermitWithoutStream  bool            `json:"permit_without_stream,omitempty"`
+	Method               string          `json:"method,omitempty"`
 	NoSSEHeader          *bool           `json:"no_sse_header,omitempty"`
 	ScMaxEachPostBytes   json.RawMessage `json:"sc_max_each_post_bytes,omitempty"`
 	ScMinPostsIntervalMs json.RawMessage `json:"sc_min_posts_interval_ms,omitempty"`
@@ -348,7 +367,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 		strictRoute = false
 	}
 
-	if pt == "HYSTERIA2" || pt == "TROJAN" {
+	if pt == "HYSTERIA2" || pt == "TROJAN" || pt == "SS" || pt == "SHADOWSOCKS" {
 		strictRoute = false
 	}
 

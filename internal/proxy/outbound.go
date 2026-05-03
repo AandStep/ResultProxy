@@ -17,6 +17,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -57,6 +58,87 @@ func getIntField(extra map[string]interface{}, key string, defaultVal int) int {
 	return defaultVal
 }
 
+// resolvePacketEncoding returns the UDP packet-encoding mode for VLESS/VMess.
+// Defaults to "xudp" for full UDP-over-TCP support (matches Xray's xudp). The
+// user may override via the "packet_encoding" or "packetEncoding" extra field;
+// "none" / empty disables UDP encoding entirely.
+func resolvePacketEncoding(extra map[string]interface{}) string {
+	v := strings.ToLower(strings.TrimSpace(firstNonEmpty(
+		getStringField(extra, "packet_encoding", ""),
+		getStringField(extra, "packetEncoding", ""),
+	)))
+	switch v {
+	case "":
+		return "xudp"
+	case "none", "off", "disable", "disabled":
+		return ""
+	default:
+		return v
+	}
+}
+
+// fingerprintFromExtra returns the uTLS fingerprint, accepting Xray's
+// "fp" as well as Clash-style "client-fingerprint" / "clientFingerprint".
+func fingerprintFromExtra(extra map[string]interface{}) string {
+	return firstNonEmpty(
+		getStringField(extra, "fp", ""),
+		getStringField(extra, "client-fingerprint", ""),
+		getStringField(extra, "clientFingerprint", ""),
+		getStringField(extra, "client_fingerprint", ""),
+	)
+}
+
+// applyTLSExtras applies optional TLS knobs (min_version, max_version,
+// cipher_suites) onto an already-built SBOutboundTLS.
+func applyTLSExtras(tls *SBOutboundTLS, extra map[string]interface{}) {
+	if tls == nil {
+		return
+	}
+	tls.MinVersion = firstNonEmpty(
+		getStringField(extra, "min_version", ""),
+		getStringField(extra, "minVersion", ""),
+		getStringField(extra, "tls-min-version", ""),
+	)
+	tls.MaxVersion = firstNonEmpty(
+		getStringField(extra, "max_version", ""),
+		getStringField(extra, "maxVersion", ""),
+		getStringField(extra, "tls-max-version", ""),
+	)
+	if cs := firstNonEmpty(
+		getStringField(extra, "cipher_suites", ""),
+		getStringField(extra, "cipherSuites", ""),
+	); cs != "" {
+		var out []string
+		for _, p := range strings.FieldsFunc(cs, func(r rune) bool {
+			return r == ',' || r == ':' || r == ';' || r == '\n' || r == '|'
+		}) {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) > 0 {
+			tls.CipherSuites = out
+		}
+	}
+}
+
+// normalizeRealityShortID trims whitespace and lowercases the hex portion
+// of a REALITY short_id. Xray accepts both upper- and lowercase hex;
+// sing-box validates hex strictly so we lowercase to be safe. Empty or
+// non-hex input passes through unchanged.
+func normalizeRealityShortID(sid string) string {
+	s := strings.TrimSpace(sid)
+	if s == "" {
+		return s
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return s
+		}
+	}
+	return strings.ToLower(s)
+}
+
 func extraSecurityExplicitlyNone(extra map[string]interface{}) bool {
 	if extra == nil {
 		return false
@@ -86,7 +168,13 @@ func buildProxyOutboundRaw(proxy ProxyConfig) SBOutbound {
 			Tag:        "proxy",
 			Server:     proxy.IP,
 			ServerPort: proxy.Port,
-			Password:   getStringField(extra, "password", proxy.Password),
+			Password: firstNonEmpty(
+				getStringField(extra, "password", ""),
+				getStringField(extra, "auth", ""),
+				getStringField(extra, "auth_str", ""),
+				getStringField(extra, "userpass", ""),
+				proxy.Password,
+			),
 			UpMbps:     intFromExtra(extra, "up_mbps", "upMbps"),
 			DownMbps:   intFromExtra(extra, "down_mbps", "downMbps"),
 		}
@@ -148,6 +236,15 @@ func buildProxyOutboundRaw(proxy ProxyConfig) SBOutbound {
 
 		uuid := getStringField(extra, "uuid", "")
 		alterId := getIntField(extra, "alterId", 0)
+		// VMess cipher: Xray uses "scy", sing-box uses "security".
+		// Default "auto" matches Xray's behavior.
+		cipher := firstNonEmpty(
+			getStringField(extra, "security_cipher", ""),
+			getStringField(extra, "scy", ""),
+			getStringField(extra, "encryption", ""),
+		)
+		// Don't confuse with TLS-layer "security" (none/tls/reality) — that's
+		// in extra["security"] but indicates transport security, not cipher.
 		out := SBOutbound{
 			Type:       "vmess",
 			Tag:        "proxy",
@@ -155,6 +252,10 @@ func buildProxyOutboundRaw(proxy ProxyConfig) SBOutbound {
 			ServerPort: proxy.Port,
 			UUID:       uuid,
 			AlterId:    alterId,
+			Security:   cipher,
+			PacketEncoding:      resolvePacketEncoding(extra),
+			GlobalPadding:       getBoolField(extra, "global_padding") || getBoolField(extra, "globalPadding"),
+			AuthenticatedLength: getBoolField(extra, "authenticated_length") || getBoolField(extra, "authenticatedLength"),
 		}
 		applyTLSAndTransport(&out, extra, proxy.IP)
 		return out
@@ -169,6 +270,7 @@ func buildProxyOutboundRaw(proxy ProxyConfig) SBOutbound {
 			ServerPort: proxy.Port,
 			UUID:       uuid,
 			Flow:       flow,
+			PacketEncoding: resolvePacketEncoding(extra),
 		}
 		applyTLSAndTransport(&out, extra, proxy.IP)
 		return out
@@ -271,27 +373,36 @@ func applyTLSAndTransport(out *SBOutbound, extra map[string]interface{}, default
 	switch security {
 	case "reality":
 		sni := getStringField(extra, "sni", defaultSNI)
-		fp := getStringField(extra, "fp", "chrome")
+		fp := fingerprintFromExtra(extra)
+		if fp == "" {
+			fp = "chrome"
+		}
 		if pbk == "" {
 			pbk = getStringField(extra, "pbk", getStringField(extra, "publicKey", getStringField(extra, "public_key", "")))
 		}
-		sid := getStringField(extra, "sid", "")
+		sid := normalizeRealityShortID(getStringField(extra, "sid", ""))
+		spiderX := firstNonEmpty(
+			getStringField(extra, "spx", ""),
+			getStringField(extra, "spider_x", ""),
+			getStringField(extra, "spiderX", ""),
+		)
 		tlsObj := &SBOutboundTLS{
 			Enabled:    true,
 			ServerName: sni,
 			UTLS:       &SBUTLS{Enabled: true, Fingerprint: fp},
 		}
 		if pbk != "" {
-			tlsObj.Reality = &SBReality{Enabled: true, PublicKey: pbk, ShortID: sid}
+			tlsObj.Reality = &SBReality{Enabled: true, PublicKey: pbk, ShortID: sid, SpiderX: spiderX}
 		}
 		out.TLS = tlsObj
 		if alpnStr := getStringField(extra, "alpn", ""); alpnStr != "" {
 			out.TLS.ALPN = xhttpPreferH2ALPN(splitALPN(alpnStr), getBoolField(extra, "insecure_h3_override"))
 		}
+		applyTLSExtras(out.TLS, extra)
 	case "tls":
 		sni := getStringField(extra, "sni", defaultSNI)
 		insecure := getBoolField(extra, "insecure")
-		fp := getStringField(extra, "fp", "")
+		fp := fingerprintFromExtra(extra)
 		tls := &SBOutboundTLS{
 			Enabled:    true,
 			ServerName: sni,
@@ -304,6 +415,7 @@ func applyTLSAndTransport(out *SBOutbound, extra map[string]interface{}, default
 			tls.ALPN = xhttpPreferH2ALPN(splitALPN(alpnStr), getBoolField(extra, "insecure_h3_override"))
 		}
 		out.TLS = tls
+		applyTLSExtras(out.TLS, extra)
 	default:
 		if extraSecurityExplicitlyNone(extra) {
 			break
@@ -316,12 +428,13 @@ func applyTLSAndTransport(out *SBOutbound, extra map[string]interface{}, default
 				ServerName: sni,
 				Insecure:   insecure,
 			}
-			if fp := getStringField(extra, "fp", ""); fp != "" {
+			if fp := fingerprintFromExtra(extra); fp != "" {
 				out.TLS.UTLS = &SBUTLS{Enabled: true, Fingerprint: fp}
 			}
 			if alpnStr := getStringField(extra, "alpn", ""); alpnStr != "" {
 				out.TLS.ALPN = xhttpPreferH2ALPN(splitALPN(alpnStr), getBoolField(extra, "insecure_h3_override"))
 			}
+			applyTLSExtras(out.TLS, extra)
 		}
 	}
 
@@ -359,8 +472,49 @@ func applyTransportOnly(out *SBOutbound, extra map[string]interface{}) {
 		if host == "" {
 			host = getStringField(extra, "host", "")
 		}
+		// Early data: Xray-style ed=<bytes> in URI, also early_data_header_name.
+		// If the path contains "?ed=N", split it; sing-box wants the bytes count
+		// in max_early_data and the header name separately.
+		maxEarly := getIntField(extra, "max_early_data", 0)
+		if maxEarly == 0 {
+			maxEarly = getIntField(extra, "maxEarlyData", 0)
+		}
+		edHeader := firstNonEmpty(
+			getStringField(extra, "early_data_header_name", ""),
+			getStringField(extra, "earlyDataHeaderName", ""),
+			getStringField(extra, "edHeader", ""),
+		)
+		if maxEarly == 0 {
+			if i := strings.Index(path, "?ed="); i >= 0 {
+				rest := path[i+4:]
+				end := len(rest)
+				if amp := strings.IndexAny(rest, "&"); amp >= 0 {
+					end = amp
+				}
+				if n, err := strconv.Atoi(rest[:end]); err == nil && n > 0 {
+					maxEarly = n
+					path = path[:i]
+					if edHeader == "" {
+						edHeader = "Sec-WebSocket-Protocol"
+					}
+				}
+			}
+		}
+		if maxEarly > 0 && edHeader == "" {
+			edHeader = "Sec-WebSocket-Protocol"
+		}
 		out.Transport = &SBOutboundTransport{
-			Type: "ws",
+			Type:                "ws",
+			Path:                path,
+			Host:                host,
+			MaxEarlyData:        maxEarly,
+			EarlyDataHeaderName: edHeader,
+		}
+	case "httpupgrade":
+		path := getStringField(extra, "path", "/")
+		host := getStringField(extra, "host", "")
+		out.Transport = &SBOutboundTransport{
+			Type: "httpupgrade",
 			Path: path,
 			Host: host,
 		}
@@ -372,16 +526,66 @@ func applyTransportOnly(out *SBOutbound, extra map[string]interface{}) {
 		if serviceName == "" {
 			serviceName = getStringField(extra, "service_name", "")
 		}
+		idleTimeout := firstNonEmpty(
+			getStringField(extra, "idle_timeout", ""),
+			getStringField(extra, "idleTimeout", ""),
+		)
+		pingTimeout := firstNonEmpty(
+			getStringField(extra, "ping_timeout", ""),
+			getStringField(extra, "pingTimeout", ""),
+		)
+		permit := getBoolField(extra, "permit_without_stream") || getBoolField(extra, "permitWithoutStream")
 		out.Transport = &SBOutboundTransport{
-			Type:        "grpc",
-			ServiceName: serviceName,
-			// authority is not supported by sing-box gRPC transport; SNI goes into tls.server_name
+			Type:                "grpc",
+			ServiceName:         serviceName,
+			IdleTimeout:         idleTimeout,
+			PingTimeout:         pingTimeout,
+			PermitWithoutStream: permit,
 		}
 	case "http", "h2":
 		out.Transport = &SBOutboundTransport{
-			Type: "http",
-			Host: getStringField(extra, "http-host", ""),
-			Path: getStringField(extra, "http-path", "/"),
+			Type:   "http",
+			Host:   getStringField(extra, "http-host", ""),
+			Path:   getStringField(extra, "http-path", "/"),
+			Method: getStringField(extra, "http-method", ""),
+		}
+	case "tcp":
+		// Xray's "tcp" + headerType=http obfuscation maps onto sing-box's
+		// "http" transport. Without HTTP headers we leave Transport nil so
+		// sing-box uses raw TCP — matching the historical default.
+		header, _ := extra["header"].(map[string]interface{})
+		ht := ""
+		if header != nil {
+			ht = strings.ToLower(stringFromExtraValue(header["type"]))
+		}
+		if ht == "http" {
+			path := "/"
+			host := ""
+			method := ""
+			if req, ok := header["request"].(map[string]interface{}); ok {
+				method = stringFromExtraValue(req["method"])
+				if pl, ok := req["path"].([]interface{}); ok && len(pl) > 0 {
+					path = stringFromExtraValue(pl[0])
+				} else if ps := stringFromExtraValue(req["path"]); ps != "" {
+					path = ps
+				}
+				if hdrs, ok := req["headers"].(map[string]interface{}); ok {
+					switch hv := hdrs["Host"].(type) {
+					case []interface{}:
+						if len(hv) > 0 {
+							host = stringFromExtraValue(hv[0])
+						}
+					case string:
+						host = strings.TrimSpace(hv)
+					}
+				}
+			}
+			out.Transport = &SBOutboundTransport{
+				Type:   "http",
+				Path:   path,
+				Host:   host,
+				Method: method,
+			}
 		}
 	case "xhttp", "splithttp":
 		host := getStringField(extra, "host", "")
@@ -561,7 +765,9 @@ func xhttpPreferH2ALPN(alpn []string, skipHack bool) []string {
 
 func splitALPN(alpn string) []string {
 	var result []string
-	for _, s := range strings.Split(alpn, ",") {
+	for _, s := range strings.FieldsFunc(alpn, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '|' || r == ';'
+	}) {
 		s = strings.TrimSpace(s)
 		if s != "" {
 			result = append(result, s)

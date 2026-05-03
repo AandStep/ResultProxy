@@ -543,6 +543,18 @@ func (a *App) ApplyMode(mode string) (proxy.ConnectResultDTO, error) {
 				a.tray.SetConnectedProxy(a.resolveProxyID(*status.CurrentProxy), serverName)
 			}
 			wailsRuntime.EventsEmit(a.ctx, "proxy:connected", *status.CurrentProxy)
+		} else if result.ErrorCode == "cancelled" {
+			// User explicitly cancelled the connect (Disconnect/CancelConnect).
+			// Do NOT rollback to the previous mode — that would silently
+			// reconnect behind the user's back. Restore the saved mode value
+			// to keep config consistent with "disconnected" state and emit a
+			// disconnect event so the UI/tray stay in sync.
+			cfg.Settings.Mode = previousMode
+			_ = a.config.SaveConfig(cfg)
+			if a.tray != nil {
+				a.tray.SetDisconnected()
+			}
+			wailsRuntime.EventsEmit(a.ctx, "proxy:disconnected", nil)
 		} else if !result.FallbackUsed {
 
 			cfg.Settings.Mode = previousMode

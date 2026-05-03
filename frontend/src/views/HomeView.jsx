@@ -44,6 +44,7 @@ export const HomeView = () => {
   const {
     isConnected,
     isConnecting,
+    isDisconnecting,
     isProxyDead,
     failedProxy,
     setFailedProxy,
@@ -154,23 +155,39 @@ export const HomeView = () => {
     <div className="flex min-h-full w-full flex-col items-center gap-5 animate-in fade-in zoom-in-95 duration-300">
       <div className="text-center space-y-2">
         <h2
-          className={`text-3xl font-bold ${isConnected ? (isProxyDead ? "text-rose-500" : "text-[#007E3A]") : isError ? "text-rose-500" : "text-zinc-400"}`}
+          className={`text-3xl font-bold ${
+            isDisconnecting
+              ? "text-amber-400"
+              : isConnecting
+                ? "text-amber-400"
+                : isConnected
+                  ? (isProxyDead ? "text-rose-500" : "text-[#007E3A]")
+                  : isError
+                    ? "text-rose-500"
+                    : "text-zinc-400"
+          }`}
         >
-          {isConnected
-            ? isProxyDead
-              ? t("home.status.lost")
-              : t("home.status.protected")
-            : isError
-              ? t("home.status.error")
-              : t("home.status.unprotected")}
+          {isDisconnecting
+            ? t("home.status.disconnecting")
+            : isConnecting
+              ? t("home.status.connecting")
+              : isConnected
+                ? isProxyDead
+                  ? t("home.status.lost")
+                  : t("home.status.protected")
+                : isError
+                  ? t("home.status.error")
+                  : t("home.status.unprotected")}
         </h2>
         {!(isConnected && !isProxyDead) && (
           <p className="text-zinc-400">
-            {isConnected
-              ? t("home.desc.lost")
-              : isError
-                ? t("home.desc.error")
-                : t("home.desc.unprotected")}
+            {isConnecting
+              ? t("home.desc.connecting")
+              : isConnected
+                ? t("home.desc.lost")
+                : isError
+                  ? t("home.desc.error")
+                  : t("home.desc.unprotected")}
           </p>
         )}
       </div>
@@ -180,31 +197,41 @@ export const HomeView = () => {
           className={`absolute inset-0 rounded-full blur-2xl transition-all duration-700 ${isConnected ? (isProxyDead ? "bg-rose-500/40 animate-pulse" : "bg-[#007E3A]/40") : isError ? "bg-rose-500/20 animate-pulse" : hasProxies ? "bg-zinc-800/10 group-hover:bg-zinc-800/20" : ""}`}
         ></div>
         <button
-          disabled={!hasProxies && !isConnected && !isConnecting}
+          disabled={isDisconnecting || (!hasProxies && !isConnected && !isConnecting)}
           onClick={
-            isConnecting
-              ? cancelConnect
-              : isError
-              ? disconnectOnly
-              : toggleConnection
+            isDisconnecting
+              ? undefined
+              : isConnecting
+                ? cancelConnect
+                : isError
+                  ? disconnectOnly
+                  : toggleConnection
           }
           className={`relative border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none flex items-center justify-center w-48 h-48 rounded-full transition-all duration-300 transform active:scale-95 ${
-            isConnecting
-              ? "bg-gradient-to-br from-zinc-800 to-zinc-900 border-4 border-amber-500 text-amber-400 shadow-2xl shadow-amber-500/30 scale-95 hover:border-rose-500 hover:text-rose-400 cursor-pointer"
-              : !hasProxies && !isConnected
-              ? "bg-zinc-900 border-4 border-zinc-800 text-zinc-600 opacity-50 cursor-not-allowed"
-              : isConnected
-                ? isProxyDead
-                  ? "bg-rose-600 text-white shadow-2xl shadow-rose-500/50"
-                  : "bg-[#007E3A] text-zinc-950 shadow-2xl shadow-[#007E3A]/50"
-                : isError
-                  ? "bg-zinc-900 border-4 border-rose-500/50 text-rose-500 shadow-2xl shadow-rose-500/20"
-                  : "bg-gradient-to-br from-zinc-800 to-zinc-900 border-4 border-zinc-800 text-zinc-400 hover:border-[#007E3A] hover:text-[#007E3A] shadow-2xl"
+            isDisconnecting
+              ? "bg-gradient-to-br from-zinc-800 to-zinc-900 border-4 border-amber-500 text-amber-400 shadow-2xl shadow-amber-500/30 scale-95 cursor-wait"
+              : isConnecting
+                ? "bg-gradient-to-br from-zinc-800 to-zinc-900 border-4 border-amber-500 text-amber-400 shadow-2xl shadow-amber-500/30 scale-95 hover:border-rose-500 hover:text-rose-400 cursor-pointer"
+                : !hasProxies && !isConnected
+                  ? "bg-zinc-900 border-4 border-zinc-800 text-zinc-600 opacity-50 cursor-not-allowed"
+                  : isConnected
+                    ? isProxyDead
+                      ? "bg-rose-600 text-white shadow-2xl shadow-rose-500/50"
+                      : "bg-[#007E3A] text-zinc-950 shadow-2xl shadow-[#007E3A]/50"
+                    : isError
+                      ? "bg-zinc-900 border-4 border-rose-500/50 text-rose-500 shadow-2xl shadow-rose-500/20"
+                      : "bg-gradient-to-br from-zinc-800 to-zinc-900 border-4 border-zinc-800 text-zinc-400 hover:border-[#007E3A] hover:text-[#007E3A] shadow-2xl"
           }`}
         >
-          <Power
-            className={`w-20 h-20 ${isConnected && !isProxyDead ? "drop-shadow-none" : isConnected || isError ? "drop-shadow-md" : ""}`}
-          />
+          {isDisconnecting || isConnecting ? (
+            <div className="w-20 h-20 flex items-center justify-center">
+              <div className="w-16 h-16 rounded-full border-4 border-amber-500/30 border-t-amber-400 animate-spin" />
+            </div>
+          ) : (
+            <Power
+              className={`w-20 h-20 ${isConnected && !isProxyDead ? "drop-shadow-none" : isConnected || isError ? "drop-shadow-md" : ""}`}
+            />
+          )}
         </button>
       </div>
 
@@ -472,7 +499,7 @@ export const HomeView = () => {
               <div
                 className={`flex w-full gap-6 transition-[opacity,transform] duration-500 ease-out motion-reduce:transition-none ${
                   statsFillRemainingHeight
-                    ? "min-h-0 flex-1"
+                    ? "min-h-0 flex-1 max-h-[24rem]"
                     : isConnected
                       ? "min-h-0 items-start"
                       : "min-h-0"

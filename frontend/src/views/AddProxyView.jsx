@@ -44,6 +44,143 @@ const PLAIN_TYPES = ["HTTP", "HTTPS", "SOCKS5"];
 const VPN_TYPES_LIST = ["VLESS", "VMESS", "TROJAN", "SS", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2"];
 const VPN_SECURITY_OPTIONS = ["none", "tls", "reality"];
 
+const AMNEZIA_INT_KEYS = ["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "itime"];
+const AMNEZIA_STR_KEYS = ["i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3"];
+
+const EMPTY_AMNEZIA_FIELDS = (() => {
+  const o = {};
+  for (const k of AMNEZIA_INT_KEYS) o[k] = "";
+  for (const k of AMNEZIA_STR_KEYS) o[k] = "";
+  return o;
+})();
+
+const amneziaFieldsFromObject = (raw) => {
+  const out = { ...EMPTY_AMNEZIA_FIELDS };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+  for (const k of [...AMNEZIA_INT_KEYS, ...AMNEZIA_STR_KEYS]) {
+    const v = raw[k];
+    if (v === undefined || v === null || v === "") continue;
+    out[k] = String(v);
+  }
+  return out;
+};
+
+const amneziaObjectFromFields = (fields) => {
+  const obj = {};
+  for (const k of AMNEZIA_INT_KEYS) {
+    const s = String(fields?.[k] ?? "").trim();
+    if (s === "") continue;
+    const n = Number(s);
+    if (Number.isFinite(n) && n >= 0) obj[k] = n;
+  }
+  for (const k of AMNEZIA_STR_KEYS) {
+    const s = String(fields?.[k] ?? "").trim();
+    if (s) obj[k] = s;
+  }
+  return obj;
+};
+
+const AmneziaEditor = ({ fields, onFieldsChange, useRaw, onUseRawChange, rawValue, onRawChange, t }) => {
+  const inputCls =
+    "w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors";
+
+  const Fld = ({ k, label, placeholder = "" }) => (
+    <div>
+      <label className="block text-[11px] uppercase tracking-wider text-zinc-500 mb-1">{label}</label>
+      <input
+        type="text"
+        inputMode={AMNEZIA_STR_KEYS.includes(k) ? "text" : "numeric"}
+        className={inputCls}
+        value={fields[k]}
+        onChange={(e) => onFieldsChange({ ...fields, [k]: e.target.value })}
+        placeholder={placeholder}
+      />
+    </div>
+  );
+
+  const Group = ({ title, children }) => (
+    <div>
+      <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider mb-2">{title}</p>
+      {children}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <label className="text-sm font-medium text-zinc-400">
+          {t("add.awgAmneziaTitle") || "AmneziaWG обфускация"}
+        </label>
+        <button
+          type="button"
+          onClick={() => onUseRawChange(!useRaw)}
+          className="text-xs text-[#007E3A] hover:underline outline-none focus:outline-none"
+        >
+          {useRaw
+            ? t("add.awgUseFields") || "Поля"
+            : t("add.awgUseJSON") || "JSON"}
+        </button>
+      </div>
+
+      {useRaw ? (
+        <textarea
+          className="w-full h-28 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors resize-none"
+          value={rawValue}
+          onChange={(e) => onRawChange(e.target.value)}
+          placeholder='{"jc":4,"jmin":1,"jmax":3,"s1":15,"s2":13}'
+        />
+      ) : (
+        <>
+          <Group title={t("add.awgGroupHandshake") || "Junk пакеты handshake"}>
+            <div className="grid grid-cols-3 gap-2">
+              <Fld k="jc" label="Jc" placeholder="4" />
+              <Fld k="jmin" label="Jmin" placeholder="1" />
+              <Fld k="jmax" label="Jmax" placeholder="3" />
+            </div>
+          </Group>
+
+          <Group title={t("add.awgGroupSizes") || "Размеры пакетов S1–S4"}>
+            <div className="grid grid-cols-4 gap-2">
+              <Fld k="s1" label="S1" />
+              <Fld k="s2" label="S2" />
+              <Fld k="s3" label="S3" />
+              <Fld k="s4" label="S4" />
+            </div>
+          </Group>
+
+          <Group title={t("add.awgGroupHeaders") || "Магические заголовки H1–H4"}>
+            <div className="grid grid-cols-4 gap-2">
+              <Fld k="h1" label="H1" />
+              <Fld k="h2" label="H2" />
+              <Fld k="h3" label="H3" />
+              <Fld k="h4" label="H4" />
+            </div>
+          </Group>
+
+          <Group title={t("add.awgGroupSpecial") || "AWG 2.0: special junk I1–I5 / Itime"}>
+            <div className="grid grid-cols-2 gap-2">
+              <Fld k="i1" label="I1" />
+              <Fld k="i2" label="I2" />
+              <Fld k="i3" label="I3" />
+              <Fld k="i4" label="I4" />
+              <Fld k="i5" label="I5" />
+              <Fld k="itime" label="Itime" placeholder="сек" />
+            </div>
+          </Group>
+
+          <Group title={t("add.awgGroupHandshakeJunk") || "AWG 2.0: handshake junk J1–J3"}>
+            <div className="grid grid-cols-3 gap-2">
+              <Fld k="j1" label="J1" />
+              <Fld k="j2" label="J2" />
+              <Fld k="j3" label="J3" />
+            </div>
+          </Group>
+        </>
+      )}
+    </div>
+  );
+};
+
 export const AddProxyView = () => {
   const { t } = useTranslation();
   const {
@@ -395,8 +532,32 @@ export const AddProxyView = () => {
     system: false,
     name: "",
     mtu: "",
+    amnezia: { ...EMPTY_AMNEZIA_FIELDS },
     amneziaJSON: "",
+    amneziaUseRaw: false,
   });
+
+  const handleAmneziaFieldsChange = (next) => setWg((w) => ({ ...w, amnezia: next }));
+  const handleAmneziaRawChange = (next) => setWg((w) => ({ ...w, amneziaJSON: next }));
+  const handleAmneziaUseRawChange = (next) => {
+    setWg((w) => {
+      if (next) {
+        const obj = amneziaObjectFromFields(w.amnezia);
+        const json = Object.keys(obj).length ? JSON.stringify(obj, null, 2) : w.amneziaJSON;
+        return { ...w, amneziaUseRaw: true, amneziaJSON: json };
+      }
+      const raw = (w.amneziaJSON || "").trim();
+      if (raw) {
+        try {
+          const obj = JSON.parse(raw);
+          if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+            return { ...w, amneziaUseRaw: false, amnezia: amneziaFieldsFromObject(obj) };
+          }
+        } catch {}
+      }
+      return { ...w, amneziaUseRaw: false };
+    });
+  };
 
   const isVpnMode = VPN_TYPES_LIST.includes(formData.type);
   const isVpnEditMode =
@@ -431,6 +592,7 @@ export const AddProxyView = () => {
         const wgAddr = Array.isArray(ex.address) ? ex.address.join(",") : String(ex.address || "");
         const wgAllowed = Array.isArray(ex.allowed_ips) ? ex.allowed_ips.join(",") : String(ex.allowed_ips || "");
         const amRaw = ex.amnezia;
+        const amObj = amRaw && typeof amRaw === "object" && !Array.isArray(amRaw) ? amRaw : null;
         setWg({
           address: wgAddr || "10.0.0.2/32",
           privateKey: String(ex.private_key || ex.privateKey || ""),
@@ -442,7 +604,9 @@ export const AddProxyView = () => {
           system: Boolean(ex.system),
           name: String(ex.name || ""),
           mtu: ex.mtu != null ? String(ex.mtu) : "",
-          amneziaJSON: amRaw && typeof amRaw === "object" ? JSON.stringify(amRaw) : "",
+          amnezia: amneziaFieldsFromObject(amObj),
+          amneziaJSON: amObj ? JSON.stringify(amObj, null, 2) : "",
+          amneziaUseRaw: false,
         });
       }
     } else {
@@ -491,7 +655,9 @@ export const AddProxyView = () => {
         system: false,
         name: "",
         mtu: "",
+        amnezia: { ...EMPTY_AMNEZIA_FIELDS },
         amneziaJSON: "",
+        amneziaUseRaw: false,
       });
     }
   }, [editingProxy]);
@@ -558,15 +724,22 @@ export const AddProxyView = () => {
         if (!ex.name) delete ex.name;
         if (!ex.mtu) delete ex.mtu;
         if (vpnType === "AMNEZIAWG") {
-          const raw = (wg.amneziaJSON || "").trim();
-          if (raw) {
-            try {
-              const obj = JSON.parse(raw);
-              if (obj && typeof obj === "object" && !Array.isArray(obj)) ex.amnezia = obj;
-            } catch {}
+          let amObj;
+          if (wg.amneziaUseRaw) {
+            const raw = (wg.amneziaJSON || "").trim();
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                  amObj = parsed;
+                }
+              } catch {}
+            }
           } else {
-            delete ex.amnezia;
+            amObj = amneziaObjectFromFields(wg.amnezia);
           }
+          if (amObj && Object.keys(amObj).length > 0) ex.amnezia = amObj;
+          else delete ex.amnezia;
         } else {
           delete ex.amnezia;
         }
@@ -623,13 +796,21 @@ export const AddProxyView = () => {
         if ((wg.name || "").trim()) extra.name = (wg.name || "").trim();
         if (wg.mtu) extra.mtu = parseInt(wg.mtu, 10) || 0;
         if (tUpper === "AMNEZIAWG") {
-          const raw = (wg.amneziaJSON || "").trim();
-          if (raw) {
-            try {
-              const obj = JSON.parse(raw);
-              if (obj && typeof obj === "object" && !Array.isArray(obj)) extra.amnezia = obj;
-            } catch {}
+          let amObj;
+          if (wg.amneziaUseRaw) {
+            const raw = (wg.amneziaJSON || "").trim();
+            if (raw) {
+              try {
+                const parsed = JSON.parse(raw);
+                if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                  amObj = parsed;
+                }
+              } catch {}
+            }
+          } else {
+            amObj = amneziaObjectFromFields(wg.amnezia);
           }
+          if (amObj && Object.keys(amObj).length > 0) extra.amnezia = amObj;
         }
       }
       saveProxyWrapper({
@@ -1078,17 +1259,15 @@ export const AddProxyView = () => {
                     />
                   </div>
                   {vpnEditType === "AMNEZIAWG" && (
-                    <div>
-                      <label className="block text-sm font-medium text-zinc-400 mb-2">
-                        {t("add.awgAmnezia") || "Amnezia (JSON)"}
-                      </label>
-                      <textarea
-                        className="w-full h-28 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors resize-none"
-                        value={wg.amneziaJSON}
-                        onChange={(e) => setWg({ ...wg, amneziaJSON: e.target.value })}
-                        placeholder='{"jc":4,"jmin":1}'
-                      />
-                    </div>
+                    <AmneziaEditor
+                      fields={wg.amnezia}
+                      onFieldsChange={handleAmneziaFieldsChange}
+                      useRaw={wg.amneziaUseRaw}
+                      onUseRawChange={handleAmneziaUseRawChange}
+                      rawValue={wg.amneziaJSON}
+                      onRawChange={handleAmneziaRawChange}
+                      t={t}
+                    />
                   )}
                 </div>
               )}
@@ -1631,17 +1810,15 @@ export const AddProxyView = () => {
                             />
                           </div>
                           {vpnEditType === "AMNEZIAWG" && (
-                            <div>
-                              <label className="block text-sm font-medium text-zinc-400 mb-2">
-                                {t("add.awgAmnezia") || "Amnezia (JSON)"}
-                              </label>
-                              <textarea
-                                className="w-full h-28 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors resize-none"
-                                value={wg.amneziaJSON}
-                                onChange={(e) => setWg({ ...wg, amneziaJSON: e.target.value })}
-                                placeholder='{"jc":4,"jmin":1}'
-                              />
-                            </div>
+                            <AmneziaEditor
+                              fields={wg.amnezia}
+                              onFieldsChange={handleAmneziaFieldsChange}
+                              useRaw={wg.amneziaUseRaw}
+                              onUseRawChange={handleAmneziaUseRawChange}
+                              rawValue={wg.amneziaJSON}
+                              onRawChange={handleAmneziaRawChange}
+                              t={t}
+                            />
                           )}
                         </div>
                       )}

@@ -29,6 +29,7 @@ export const useDaemonStatus = (
     addLog,
     settings,
     activeProxy,
+    statusGenerationRef,
 ) => {
     const [isProxyDead, setIsProxyDead] = useState(false);
     const [stats, setStats] = useState({ download: 0, upload: 0 });
@@ -42,8 +43,14 @@ export const useDaemonStatus = (
     useEffect(() => {
         let interval;
         const fetchStatus = async () => {
+            const genAtStart = statusGenerationRef ? statusGenerationRef.current : 0;
             try {
                 const data = await wailsAPI.getStatus();
+                // Drop the response if a user action started or ended during the
+                // await — the daemon snapshot we just got is stale relative to
+                // the new intent and would flap isConnected back to its old value.
+                const genChanged = statusGenerationRef && statusGenerationRef.current !== genAtStart;
+                if (genChanged) return;
                 if (daemonStatus !== "online") setDaemonStatus("online");
 
                 setIsProxyDead(!!data.isProxyDead);
@@ -142,6 +149,7 @@ export const useDaemonStatus = (
         setFailedProxy,
         isSwitchingRef,
         activeProxy,
+        statusGenerationRef,
     ]);
 
     return { isProxyDead, stats, speedHistory, daemonStatus };

@@ -23,6 +23,7 @@ export const useDaemonControl = (
     isConnected,
     setIsConnected,
     setIsConnecting,
+    setIsDisconnecting,
     activeProxy,
     setActiveProxy,
     failedProxy,
@@ -36,10 +37,15 @@ export const useDaemonControl = (
     addLog,
     showAlertDialog,
     pings,
+    statusGenerationRef,
 ) => {
     const { t } = useTranslation();
 
     const AUTO_MAX_ATTEMPTS = 5;
+
+    const bumpGen = () => {
+        if (statusGenerationRef) statusGenerationRef.current += 1;
+    };
 
     const getConnectCandidates = useCallback((proxyToResolve) => {
         if (proxyToResolve?.type?.toUpperCase() !== "AUTO") {
@@ -83,8 +89,10 @@ export const useDaemonControl = (
         if (isSwitchingRef.current) return;
 
         try {
+            bumpGen();
             isSwitchingRef.current = true;
             setIsConnecting(false);
+            setIsDisconnecting(true);
             addLog("Отключение...", "info");
             await wailsAPI.disconnect();
             setIsConnected(false);
@@ -93,11 +101,11 @@ export const useDaemonControl = (
         } catch (error) {
             addLog(`Сбой отключения: ${error.message || error}`, "error");
         } finally {
-            setTimeout(() => {
-                isSwitchingRef.current = false;
-            }, 1000);
+            bumpGen();
+            setIsDisconnecting(false);
+            isSwitchingRef.current = false;
         }
-    }, [addLog, isSwitchingRef, setFailedProxy, setIsConnected, setIsConnecting]);
+    }, [addLog, isSwitchingRef, setFailedProxy, setIsConnected, setIsConnecting, setIsDisconnecting]);
 
     const toggleConnection = useCallback(async () => {
         if (isSwitchingRef.current) return;
@@ -113,15 +121,18 @@ export const useDaemonControl = (
         if (proxies.length === 0 || !targetProxy) return;
 
         try {
+            bumpGen();
             isSwitchingRef.current = true;
             setFailedProxy(null);
 
             if (isConnected) {
                 setIsConnecting(false);
+                setIsDisconnecting(true);
                 addLog("Отключение...", "info");
                 await wailsAPI.disconnect();
                 addLog("Отключено успешно.", "success");
                 setIsConnected(false);
+                setIsDisconnecting(false);
             } else {
                 setIsConnecting(true);
                 const isAuto = targetProxy?.type?.toUpperCase() === "AUTO";
@@ -165,9 +176,8 @@ export const useDaemonControl = (
                             confirmText: t("tunnel.restartAsAdmin"),
                             onConfirmAction: () => wailsAPI.restartAsAdmin(),
                         });
-                        setTimeout(() => {
-                            isSwitchingRef.current = false;
-                        }, 3000);
+                        bumpGen();
+                        isSwitchingRef.current = false;
                         return;
                     }
                     const reason = res?.reason ? ` Причина: ${res.reason}` : "";
@@ -192,12 +202,13 @@ export const useDaemonControl = (
                 setIsConnecting(false);
             }
 
-            setTimeout(() => {
-                isSwitchingRef.current = false;
-            }, 3000);
+            bumpGen();
+            isSwitchingRef.current = false;
         } catch (error) {
+            bumpGen();
             isSwitchingRef.current = false;
             setIsConnecting(false);
+            setIsDisconnecting(false);
             setFailedProxy(targetProxy);
             addLog(`Сбой: ${error.message || error}`, "error");
         }
@@ -214,6 +225,7 @@ export const useDaemonControl = (
         setFailedProxy,
         isSwitchingRef,
         setIsConnecting,
+        setIsDisconnecting,
         updateSetting,
         showAlertDialog,
         t,
@@ -227,6 +239,7 @@ export const useDaemonControl = (
                 return;
 
             try {
+                bumpGen();
                 isSwitchingRef.current = true;
                 setFailedProxy(null);
                 if (setActiveTab) setActiveTab("home");
@@ -241,8 +254,10 @@ export const useDaemonControl = (
                 addLog(`Переключение на: ${proxy.name}...`, "info");
 
                 if (isConnected) {
+                    setIsDisconnecting(true);
                     await wailsAPI.disconnect();
                     setIsConnected(false);
+                    setIsDisconnecting(false);
                 }
 
                 setIsConnecting(true);
@@ -279,9 +294,8 @@ export const useDaemonControl = (
                             confirmText: t("tunnel.restartAsAdmin"),
                             onConfirmAction: () => wailsAPI.restartAsAdmin(),
                         });
-                        setTimeout(() => {
-                            isSwitchingRef.current = false;
-                        }, 2000);
+                        bumpGen();
+                        isSwitchingRef.current = false;
                         return;
                     }
                     const reason = res?.reason ? ` Причина: ${res.reason}` : "";
@@ -302,12 +316,13 @@ export const useDaemonControl = (
                     }
                 }
 
-                setTimeout(() => {
-                    isSwitchingRef.current = false;
-                }, 2000);
+                bumpGen();
+                isSwitchingRef.current = false;
             } catch (error) {
+                bumpGen();
                 isSwitchingRef.current = false;
                 setIsConnecting(false);
+                setIsDisconnecting(false);
                 setFailedProxy(proxy);
                 addLog(`Сбой подключения: ${error.message || error}`, "error");
             }
@@ -322,6 +337,7 @@ export const useDaemonControl = (
             setFailedProxy,
             setIsConnected,
             setIsConnecting,
+            setIsDisconnecting,
             isSwitchingRef,
             updateSetting,
             showAlertDialog,
@@ -337,8 +353,10 @@ export const useDaemonControl = (
 
             if (isDeletingActive) {
                 if (isConnected) {
+                    bumpGen();
                     isSwitchingRef.current = true;
                     setIsConnecting(false);
+                    setIsDisconnecting(true);
                     addLog("Активный сервер удален. Разрыв соединения...", "info");
                     try {
                         await wailsAPI.disconnect();
@@ -346,9 +364,9 @@ export const useDaemonControl = (
                     } catch (e) {}
                     setIsConnected(false);
                     setActiveProxy(null);
-                    setTimeout(() => {
-                        isSwitchingRef.current = false;
-                    }, 2000);
+                    setIsDisconnecting(false);
+                    bumpGen();
+                    isSwitchingRef.current = false;
                 } else {
                     setActiveProxy(null);
                 }
@@ -363,6 +381,7 @@ export const useDaemonControl = (
             setActiveProxy,
             setIsConnected,
             setIsConnecting,
+            setIsDisconnecting,
             setFailedProxy,
             isSwitchingRef,
         ],
@@ -373,6 +392,7 @@ export const useDaemonControl = (
         // and Disconnect additionally stops the engine and clears sys proxy —
         // without this, sing-box keeps running and the next Connect fails with
         // "engine already running".
+        bumpGen();
         isSwitchingRef.current = true;
         try {
             await wailsAPI.disconnect();
@@ -381,9 +401,11 @@ export const useDaemonControl = (
         }
         setIsConnected(false);
         setIsConnecting(false);
+        setIsDisconnecting(false);
         setFailedProxy(null);
+        bumpGen();
         isSwitchingRef.current = false;
-    }, [setIsConnecting, setIsConnected, setFailedProxy, isSwitchingRef]);
+    }, [setIsConnecting, setIsDisconnecting, setIsConnected, setFailedProxy, isSwitchingRef]);
 
     return { disconnectOnly, toggleConnection, selectAndConnect, deleteProxy, cancelConnect };
 };

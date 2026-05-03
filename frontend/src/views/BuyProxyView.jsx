@@ -28,6 +28,7 @@ const VPN_PARTNERS = [
   {
     id: "imp_vpn",
     link: "https://t.me/impVPNBot?start=NzQ3MDczMjUz",
+    siteLink: "https://my.impio.space/?ref=NzQ3MDczMjUz",
     promoCode: "result",
     logo: implogo,
     isBot: true,
@@ -139,6 +140,24 @@ export const BuyProxyView = () => {
           </div>
         </button>
       </div>
+
+      {partner.siteLink && (
+        <button
+          onClick={() => handleCopyAndGo(partner.siteLink, `${partner.id}_site`)}
+          className="flex items-center justify-center space-x-2 w-full px-5 py-3.5 bg-zinc-800 hover:bg-zinc-700 text-white rounded-xl font-bold transition-all border border-zinc-700/50 active:scale-[0.98] z-10"
+        >
+          {copiedLink === `${partner.id}_site` ? (
+            <Check className="w-4 h-4" />
+          ) : (
+            <ExternalLink className="w-4 h-4" />
+          )}
+          <span>
+            {copiedLink === `${partner.id}_site`
+              ? t("buy.copied")
+              : t("buy.goSite")}
+          </span>
+        </button>
+      )}
     </div>
   );
 

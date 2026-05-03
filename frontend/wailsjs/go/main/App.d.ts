@@ -47,11 +47,11 @@ export function ImportConfig(arg1:string):Promise<void>;
 
 export function IsAdmin():Promise<boolean>;
 
-export function PickAppForWhitelist():Promise<string>;
-
 export function IsAutostartEnabled():Promise<boolean>;
 
 export function ParseSubscriptionText(arg1:string):Promise<Array<config.ProxyEntry>>;
+
+export function PickAppForWhitelist():Promise<string>;
 
 export function PingProxy(arg1:string,arg2:number,arg3:string):Promise<proxy.PingResultDTO>;
 

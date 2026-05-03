@@ -187,6 +187,10 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) []config.ProxyEntry 
 	
 	// Иногда obj сам является outbound'ом
 	protocol := asString(obj["protocol"])
+	if protocol == "" {
+		// sing-box-style outbound uses "type" instead of "protocol".
+		protocol = asString(obj["type"])
+	}
 	if protocol != "" {
 		if entry, ok := parseJSONOutbound(obj, asString(obj["tag"])); ok {
 			entries = append(entries, entry)
@@ -214,6 +218,10 @@ func parseJSONSubscriptionEntry(obj map[string]interface{}) []config.ProxyEntry 
 
 func parseJSONOutbound(outbound map[string]interface{}, name string) (config.ProxyEntry, bool) {
 	protocol := strings.ToLower(asString(outbound["protocol"]))
+	if protocol == "" {
+		// Fallback for sing-box-style JSON which uses "type" instead of "protocol".
+		protocol = strings.ToLower(asString(outbound["type"]))
+	}
 	if protocol == "freedom" || protocol == "blackhole" || protocol == "dns" {
 		return config.ProxyEntry{}, false
 	}
@@ -516,9 +524,199 @@ func parseJSONOutbound(outbound map[string]interface{}, name string) (config.Pro
 			Country:  countryFromNameAndHost(name, host),
 			Extra:    extraJSON,
 		}, host != "" && port > 0
+	case "wireguard", "amneziawg":
+		return parseJSONWireGuardOutbound(outbound, settings, name, protocol)
 	default:
 		return config.ProxyEntry{}, false
 	}
+}
+
+// parseJSONWireGuardOutbound handles both Xray-style ("settings" sub-object)
+// and sing-box-style (fields at root) WireGuard / AmneziaWG outbounds.
+// The output type is "AMNEZIAWG" if any amnezia parameter is present (or
+// protocol is explicitly amneziawg), otherwise "WIREGUARD".
+func parseJSONWireGuardOutbound(outbound, settings map[string]interface{}, name, protocol string) (config.ProxyEntry, bool) {
+	pick := func(key, altKey string) interface{} {
+		if v, ok := outbound[key]; ok && v != nil {
+			return v
+		}
+		if altKey != "" {
+			if v, ok := outbound[altKey]; ok && v != nil {
+				return v
+			}
+		}
+		if settings != nil {
+			if v, ok := settings[key]; ok && v != nil {
+				return v
+			}
+			if altKey != "" {
+				if v, ok := settings[altKey]; ok && v != nil {
+					return v
+				}
+			}
+		}
+		return nil
+	}
+
+	stringList := func(v interface{}) []string {
+		switch t := v.(type) {
+		case []interface{}:
+			var out []string
+			for _, it := range t {
+				if s := asString(it); s != "" {
+					out = append(out, s)
+				}
+			}
+			return out
+		case string:
+			return splitCSV(t)
+		default:
+			return nil
+		}
+	}
+
+	privateKey := asString(pick("private_key", "secretKey"))
+	publicKey := asString(pick("public_key", "publicKey"))
+	preSharedKey := asString(pick("pre_shared_key", "preSharedKey"))
+	address := stringList(pick("address", "localAddresses"))
+	allowedIPs := stringList(pick("allowed_ips", "allowedIPs"))
+	mtu := asInt(pick("mtu", "MTU"))
+
+	// Server endpoint may live at the outbound root (sing-box) or inside
+	// settings.peers[0] (Xray uses peer.endpoint = "host:port"). Do NOT
+	// fall back to the "address" field here — in WireGuard configs that's
+	// the local interface address, not the server.
+	host := asString(pick("server", ""))
+	port := asInt(pick("server_port", ""))
+
+	if peers, ok := asSlice(pick("peers", "")); ok && len(peers) > 0 {
+		if peer, ok := asMap(peers[0]); ok {
+			if publicKey == "" {
+				publicKey = asString(peer["public_key"])
+				if publicKey == "" {
+					publicKey = asString(peer["publicKey"])
+				}
+			}
+			if preSharedKey == "" {
+				preSharedKey = asString(peer["pre_shared_key"])
+				if preSharedKey == "" {
+					preSharedKey = asString(peer["preSharedKey"])
+				}
+			}
+			if len(allowedIPs) == 0 {
+				allowedIPs = stringList(peer["allowed_ips"])
+				if len(allowedIPs) == 0 {
+					allowedIPs = stringList(peer["allowedIPs"])
+				}
+			}
+			if host == "" {
+				host = asString(peer["address"])
+				if host == "" {
+					host = asString(peer["server"])
+				}
+			}
+			if port == 0 {
+				port = asInt(peer["port"])
+				if port == 0 {
+					port = asInt(peer["server_port"])
+				}
+			}
+			// Xray peer.endpoint = "host:port".
+			if (host == "" || port == 0) {
+				if ep := asString(peer["endpoint"]); ep != "" {
+					if i := strings.LastIndex(ep, ":"); i > 0 {
+						if host == "" {
+							host = ep[:i]
+						}
+						if port == 0 {
+							port, _ = strconv.Atoi(ep[i+1:])
+						}
+					}
+				}
+			}
+		}
+	}
+
+	extra := map[string]interface{}{
+		"private_key": privateKey,
+		"public_key":  publicKey,
+	}
+	if len(address) > 0 {
+		extra["address"] = address
+	}
+	if len(allowedIPs) > 0 {
+		extra["allowed_ips"] = allowedIPs
+	}
+	if preSharedKey != "" {
+		extra["pre_shared_key"] = preSharedKey
+	}
+	if mtu > 0 {
+		extra["mtu"] = mtu
+	}
+
+	// Amnezia obfuscation block (sing-box-extended). Field names are
+	// already snake_case in JSON subscriptions; copy known keys only so we
+	// don't smuggle unknown junk into the engine config.
+	hasAmnezia := false
+	if amRaw := pick("amnezia", ""); amRaw != nil {
+		if am, ok := asMap(amRaw); ok {
+			amOut := map[string]interface{}{}
+			intKeys := []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "itime"}
+			for _, k := range intKeys {
+				if v, ok := am[k]; ok && v != nil {
+					amOut[k] = asInt(v)
+				}
+			}
+			// H1-H4 may carry an AWG 2.0 "low-high" range as a string;
+			// preserve strings so amneziaFromExtra can randomize at build time.
+			headerKeys := []string{"h1", "h2", "h3", "h4"}
+			for _, k := range headerKeys {
+				if v, ok := am[k]; ok && v != nil {
+					if s, isStr := v.(string); isStr {
+						s = strings.TrimSpace(s)
+						if s != "" {
+							amOut[k] = s
+						}
+					} else {
+						amOut[k] = asInt(v)
+					}
+				}
+			}
+			strKeys := []string{"i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3"}
+			for _, k := range strKeys {
+				if v := asString(am[k]); v != "" {
+					amOut[k] = v
+				}
+			}
+			if len(amOut) > 0 {
+				extra["amnezia"] = amOut
+				hasAmnezia = true
+			}
+		}
+	}
+
+	if name == "" {
+		if hasAmnezia || protocol == "amneziawg" {
+			name = "AmneziaWG"
+		} else {
+			name = "WireGuard"
+		}
+	}
+
+	outType := "WIREGUARD"
+	if hasAmnezia || protocol == "amneziawg" {
+		outType = "AMNEZIAWG"
+	}
+
+	extraJSON, _ := json.Marshal(extra)
+	return config.ProxyEntry{
+		IP:      host,
+		Port:    port,
+		Type:    outType,
+		Name:    name,
+		Country: countryFromNameAndHost(name, host),
+		Extra:   extraJSON,
+	}, host != "" && port > 0 && privateKey != "" && publicKey != ""
 }
 
 func asMap(v interface{}) (map[string]interface{}, bool) {
@@ -967,12 +1165,21 @@ func parseAmneziaWGURI(uri string) (config.ProxyEntry, error) {
 	// capitalized keys (Jc, Jmin, S1, H1, …) while other generators
 	// use lowercase (jc, jmin, s1, h1, …).
 	amnezia := map[string]interface{}{}
-	amneziaIntKeys := []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "itime"}
+	amneziaIntKeys := []string{"jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "itime"}
 	for _, k := range amneziaIntKeys {
 		if v := strings.TrimSpace(getQueryParamCI(params, k)); v != "" {
 			if n, convErr := strconv.ParseInt(v, 10, 64); convErr == nil {
 				amnezia[k] = n
 			}
+		}
+	}
+	// H1-H4 may be either a single uint32 (AWG 1.0) or a "low-high" range
+	// string (AWG 2.0). Keep the raw string so amneziaFromExtra can pick a
+	// random value within the range at engine build time.
+	amneziaHeaderKeys := []string{"h1", "h2", "h3", "h4"}
+	for _, k := range amneziaHeaderKeys {
+		if v := strings.TrimSpace(getQueryParamCI(params, k)); v != "" {
+			amnezia[k] = v
 		}
 	}
 	amneziaStringKeys := []string{"i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3"}

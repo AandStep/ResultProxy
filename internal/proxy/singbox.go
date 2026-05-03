@@ -95,8 +95,6 @@ type singBoxLogWriter struct {
 var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func (w *singBoxLogWriter) WriteMessage(level sblog.Level, message string) {
-	
-	
 	if level > sblog.LevelWarn {
 		return
 	}

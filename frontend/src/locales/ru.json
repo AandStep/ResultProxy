@@ -15,13 +15,17 @@
       "protected": "Защищено",
       "lost": "Связь потеряна",
       "error": "Ошибка подключения",
-      "unprotected": "Не защищено"
+      "unprotected": "Не защищено",
+      "connecting": "Подключение...",
+      "disconnecting": "Отключение..."
     },
     "desc": {
       "protected": "Ваш трафик маршрутизируется через прокси.",
       "lost": "Прокси-сервер не отвечает. Ожидание восстановления...",
       "error": "Узел недоступен. Проверьте данные или выберите другой сервер.",
-      "unprotected": "Ваш реальный IP-адрес виден."
+      "unprotected": "Ваш реальный IP-адрес виден.",
+      "connecting": "Устанавливаем соединение с сервером...",
+      "disconnecting": "Завершаем соединение..."
     },
     "noProxies": "Нет прокси? ",
     "buyDiscount": "Приобретите их со скидкой 5%",
@@ -123,7 +127,15 @@
     "wgMtu": "MTU",
     "wgSystem": "System interface",
     "wgName": "Interface name",
-    "awgAmnezia": "Amnezia (JSON)"
+    "awgAmnezia": "Amnezia (JSON)",
+    "awgAmneziaTitle": "AmneziaWG обфускация",
+    "awgUseFields": "Поля",
+    "awgUseJSON": "JSON",
+    "awgGroupHandshake": "Junk пакеты handshake (Jc/Jmin/Jmax)",
+    "awgGroupSizes": "Размеры пакетов S1–S4",
+    "awgGroupHeaders": "Магические заголовки H1–H4",
+    "awgGroupSpecial": "AWG 2.0: special junk I1–I5 / Itime",
+    "awgGroupHandshakeJunk": "AWG 2.0: handshake junk J1–J3"
   },
   "settings": {
     "title": "Настройки приложения",
@@ -318,6 +330,7 @@
     "copied": "Скопировано!",
     "go": "Перейти",
     "goBot": "Открыть бота",
+    "goSite": "Перейти на сайт",
     "copy": "Копировать"
   },
   "common": {
