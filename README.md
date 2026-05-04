@@ -5,12 +5,12 @@
 <h1 align="center">ResultV (ранее ResultProxy)</h1>
 
 <p align="center">
-  <b>Настольный клиент для ВПН и прокси на Windows (скоро будет поддержка macOS/Linux): Wails, Go и sing-box.</b><br>
+  <b>Настольный клиент для ВПН и прокси на Windows (поддержка macOS/Linux в бета тесте): Wails, Go и sing-box.</b><br>
   Маршрутизация, подписки, умные правила и интеграция с системой в одном приложении.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.1-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.1.2-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/desktop-Wails-27272f.svg" alt="Wails">
   <img src="https://img.shields.io/badge/backend-Go-00ADD8.svg" alt="Go">
   <img src="https://img.shields.io/badge/frontend-React_18-61dafb.svg" alt="React">
@@ -33,9 +33,9 @@
 
 ## О проекте
 
-ResultV **3.1.1** — нативное настольное приложение на **[Wails v2](https://wails.io/)**. Интерфейс: **React 18**, **Vite**, **Tailwind CSS**; трафик обрабатывает бэкенд на **Go** и движок **[sing-box](https://github.com/SagerNet/sing-box)** (теги сборки заданы в `wails.json`). Локализация через **i18next** (русский и английский).
+ResultV **3.1.2** — нативное настольное приложение на **[Wails v2](https://wails.io/)**. Интерфейс: **React 18**, **Vite**, **Tailwind CSS**; трафик обрабатывает бэкенд на **Go** и движок **[sing-box](https://github.com/SagerNet/sing-box)** (теги сборки заданы в `wails.json`). Локализация через **i18next** (русский и английский).
 
-**Готовые сборки:** в GitHub Actions публикуются артефакты **Windows amd64** (portable `.exe` и установщик NSIS) при push тега `v`*. Код содержит ветки под **macOS** и **Linux**, но автоматические релизы в CI сейчас только для Windows; остальные платформы будут доступны позже, в связи с полным переносом проекта на GO стек.
+**Готовые сборки:** в GitHub Actions публикуются артефакты **Windows amd64** (portable `.exe` и установщик NSIS), **macOS** (`.dmg`) и **Linux** (`.AppImage`, `.deb`, `.rpm`) при push тега `v`*.
 
 ---
 
@@ -66,10 +66,12 @@ ResultV **3.1.1** — нативное настольное приложение
 **Важно:**
 
 - **WireGuard** и **AmneziaWG** работают только в режиме **Tunnel**, в режиме Proxy недоступны (проверка в `internal/proxy/manager.go`).
+- **AmneziaWG 2.0** — полный набор полей обфускации: классические `Jc/Jmin/Jmax`, размеры `S1–S4`, заголовки `H1–H4`, специальные джанки `I1–I5` + `Itime`, рукопожатие-джанки `J1–J3`. В UI их можно задавать в структурированном редакторе (вкладка AmneziaWG) либо в режиме «Raw JSON». Принимаются URI вида `awg://...?Jc=5&Jmin=10&Jmax=50&S1=16&I1=...&J1=...&Itime=300` (как в нижнем, так и в верхнем регистре — клиенты AmneziaVPN отдают `Jc/Jmin/...`).
+- Подписки в **JSON** (Xray-формат с `outbounds[]` и sing-box-формат с `type`) разбираются для всех ключевых протоколов, включая `wireguard`/`amneziawg` с блоком `amnezia`.
 - Режим **Tunnel** в Windows требует **запуска от имени администратора**.
 - **Kill Switch** в Windows может требовать **прав администратора** для правил брандмауэра (`internal/system/killswitch_windows.go`).
 - Некоторые провайдеры подписок используют **HWID-ограничение устройств**; приложение передает стабильный `x-hwid` при загрузке подписок и показывает причину, если провайдер вернул пустой ответ по лимиту.
-- **VMESS, Trojan и SS** протестированы **слабее**, чем VLESS и часть других стеков; при сбоях лучше написать в ТГ @resultpoint_manager.
+- **При сбоях** просьба писать в ТГ @resultpoint_manager.
 
 ---
 
@@ -89,7 +91,7 @@ ResultV **3.1.1** — нативное настольное приложение
 
 ### Купить прокси
 
-Вкладка **Купить** ведёт на партнёрские предложения ([result-proxy.ru](https://result-proxy.ru/)). Если у вас уже есть сервер или подписка, шаг можно пропустить.
+Вкладка **Купить** ведёт на партнёрские предложения ([impVPN:telegram](https://t.me/impVPNBot?start=NzQ3MDczMjUz)), ([impVPN:site](https://my.impio.space/?ref=NzQ3MDczMjUz)) - Лучшие ВПН сервера по доступным ценам, а по промокоду **result** бонус 20% к пополнению баланса. Если у вас уже есть сервер или подписка, шаг можно пропустить.
 
 <p align="center">
   <img src="docs/images/readme/buy-ru.png" width="720" alt="Купить прокси">
@@ -107,7 +109,7 @@ ResultV **3.1.1** — нативное настольное приложение
 
 ### Список прокси
 
-Карточки серверов, **пинг**, редактирование и удаление, работа с группами от **подписок**.
+Карточки серверов, **пинг**, редактирование и удаление, работа с группами от **подписок**, добавление серверов в избранное.
 
 <p align="center">
   <img src="docs/images/readme/list-ru.png" width="720" alt="Список прокси">
@@ -119,7 +121,10 @@ ResultV **3.1.1** — нативное настольное приложение
 Режимы **Global** и **Smart**; вкладки исключений по **сайтам** (например `*.example.com`) и по **приложениям**.
 
 <p align="center">
-  <img src="docs/images/readme/rules-ru.png" width="720" alt="Умные правила">
+  <img src="docs/images/readme/rules-1-ru.png" width="720" alt="Умные правила">
+</p>
+<p align="center">
+  <img src="docs/images/readme/rules-2-ru.png" width="720" alt="Умные правила">
 </p>
 
 
@@ -134,10 +139,13 @@ ResultV **3.1.1** — нативное настольное приложение
 
 ### Настройки
 
-**Автозапуск**, **Kill Switch**, **блокировка рекламы**, **экспорт/импорт** с паролем.
+**Автозапуск**, **Kill Switch**, **блокировка рекламы**, **кастомные DNS**, **слушание локальной сети и выставление локального порта** **экспорт/импорт** с паролем.
 
 <p align="center">
-  <img src="docs/images/readme/settings-ru.png" width="720" alt="Настройки">
+  <img src="docs/images/readme/settings-1-ru.png" width="720" alt="Настройки">
+</p>
+<p align="center">
+  <img src="docs/images/readme/settings-2-ru.png" width="720" alt="Настройки">
 </p>
 
 

@@ -546,15 +546,16 @@ export const ProxyListView = () => {
               totalBytes > 0
                 ? formatTrafficBytes(totalBytes)
                 : t("proxyList.subUnlimited");
-            const expireLine =
-              isSub && subMeta?.expireUnix > 0
-                ? t("proxyList.subActiveUntil", {
-                    date: new Date(subMeta.expireUnix * 1000).toLocaleString(
-                      i18n.language,
-                      { dateStyle: "long", timeStyle: "short" },
-                    ),
-                  })
-                : null;
+            let expireLine = null;
+            if (isSub && subMeta?.expireUnix > 0) {
+              const d = new Date(subMeta.expireUnix * 1000);
+              const dd = String(d.getDate()).padStart(2, "0");
+              const mm = String(d.getMonth() + 1).padStart(2, "0");
+              const yy = String(d.getFullYear()).slice(-2);
+              const hh = String(d.getHours()).padStart(2, "0");
+              const min = String(d.getMinutes()).padStart(2, "0");
+              expireLine = `до ${dd}.${mm}.${yy}. в ${hh}:${min}`;
+            }
 
             return (
               <div key={groupName} className="space-y-4">
@@ -572,19 +573,21 @@ export const ProxyListView = () => {
                           subscriptionUrl={subMeta?.url}
                         />
                       )}
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <h3 className="text-lg font-bold truncate text-white transition-colors group-hover/hdr:text-zinc-100">
+                      <div className="flex min-w-0 flex-1 items-center gap-3 py-1">
+                        <h3 className="text-lg font-bold text-white transition-colors group-hover/hdr:text-zinc-100 whitespace-normal break-words">
                           {groupName}
                         </h3>
                         {isSub && (
-                          <span className="inline-flex items-center rounded-full border border-zinc-700/70 bg-zinc-900/80 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap">
+                          <span className="inline-flex items-center rounded-full border border-zinc-700/70 bg-zinc-900/80 px-2.5 py-0.5 text-xs font-medium whitespace-nowrap shrink-0">
                             <span className="text-zinc-300">{usedTrafficStr}</span>
                             <span className="text-zinc-500">/</span>
                             <span className="text-zinc-400">{totalTrafficStr}</span>
                           </span>
                         )}
+                      </div>
+                      <div className="flex items-center gap-3 ml-auto min-w-0 pl-2">
                         {isSub && expireLine && (
-                          <span className="ml-auto text-xs text-zinc-400 whitespace-nowrap text-right">
+                          <span className="text-[13px] text-zinc-300 mr-1 whitespace-nowrap shrink-0">
                             {expireLine}
                           </span>
                         )}

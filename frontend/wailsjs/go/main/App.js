@@ -78,10 +78,6 @@ export function HandleDeepLink(arg1) {
   return window['go']['main']['App']['HandleDeepLink'](arg1);
 }
 
-export function PickAppForWhitelist() {
-  return window['go']['main']['App']['PickAppForWhitelist']();
-}
-
 export function ImportConfig(arg1) {
   return window['go']['main']['App']['ImportConfig'](arg1);
 }
@@ -96,6 +92,10 @@ export function IsAutostartEnabled() {
 
 export function ParseSubscriptionText(arg1) {
   return window['go']['main']['App']['ParseSubscriptionText'](arg1);
+}
+
+export function PickAppForWhitelist() {
+  return window['go']['main']['App']['PickAppForWhitelist']();
 }
 
 export function PingProxy(arg1, arg2, arg3) {

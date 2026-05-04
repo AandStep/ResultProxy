@@ -226,11 +226,11 @@ export const RulesView = () => {
           {t("rules.apps.desc1")}
           <strong>{t("rules.apps.desc2")}</strong>
         </p>
-        <div className="flex space-x-3 mb-6">
+        <div className="flex flex-wrap gap-3 mb-6">
           <input
             type="text"
             placeholder={`${t("rules.apps.placeholder")}${appPlaceholder}`}
-            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus:border-[#007E3A] transition-colors"
+            className="flex-1 min-w-[180px] bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus:border-[#007E3A] transition-colors"
             value={newApp}
             onChange={(e) => setNewApp(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && addApp()}

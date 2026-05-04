@@ -38,19 +38,28 @@ export const ConnectionProvider = ({ children }) => {
 
     const [isConnected, setIsConnected] = useState(false);
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isDisconnecting, setIsDisconnecting] = useState(false);
     const [failedProxy, setFailedProxy] = useState(null);
     const [activeProxy, setActiveProxy] = useState(null);
 
     const isSwitchingRef = useRef(false);
+    // Monotonic counter incremented before every user-initiated control action.
+    // The status poller captures it before each getStatus() call and discards
+    // the response if the value changed during the await — this kills the race
+    // where a stale poll overwrites isConnected right after a user action,
+    // without needing arbitrary post-action lock timeouts.
+    const statusGenerationRef = useRef(0);
 
     // Mirror mode-apply state into the connection flags so the UI shows
     // "reconnecting" instead of briefly flipping to "disconnected" while
     // the backend disconnect/connect cycle runs.
     useEffect(() => {
         if (isApplyingMode) {
+            statusGenerationRef.current += 1;
             isSwitchingRef.current = true;
             setIsConnecting(true);
         } else {
+            statusGenerationRef.current += 1;
             isSwitchingRef.current = false;
             setIsConnecting(false);
         }
@@ -69,12 +78,14 @@ export const ConnectionProvider = ({ children }) => {
         addLog,
         settings,
         activeProxy,
+        statusGenerationRef,
     );
 
     const { disconnectOnly, toggleConnection, selectAndConnect, deleteProxy, cancelConnect } = useDaemonControl(
         isConnected,
         setIsConnected,
         setIsConnecting,
+        setIsDisconnecting,
         activeProxy,
         setActiveProxy,
         failedProxy,
@@ -88,11 +99,13 @@ export const ConnectionProvider = ({ children }) => {
         addLog,
         showAlertDialog,
         pings,
+        statusGenerationRef,
     );
 
     const value = {
         isConnected,
         isConnecting,
+        isDisconnecting,
         isProxyDead,
         failedProxy,
         setFailedProxy,

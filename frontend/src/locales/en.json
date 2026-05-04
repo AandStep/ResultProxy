@@ -15,13 +15,17 @@
       "protected": "Protected",
       "lost": "Connection Lost",
       "error": "Connection Error",
-      "unprotected": "Unprotected"
+      "unprotected": "Unprotected",
+      "connecting": "Connecting...",
+      "disconnecting": "Disconnecting..."
     },
     "desc": {
       "protected": "Your traffic is routed through proxy.",
       "lost": "Proxy is unresponsive. Waiting to restore...",
       "error": "Node unreachable. Check details or select another server.",
-      "unprotected": "Your real IP is exposed."
+      "unprotected": "Your real IP is exposed.",
+      "connecting": "Establishing connection to the server...",
+      "disconnecting": "Closing connection..."
     },
     "noProxies": "No proxies? ",
     "buyDiscount": "Buy them with a 5% discount",
@@ -123,7 +127,15 @@
     "wgMtu": "MTU",
     "wgSystem": "System interface",
     "wgName": "Interface name",
-    "awgAmnezia": "Amnezia (JSON)"
+    "awgAmnezia": "Amnezia (JSON)",
+    "awgAmneziaTitle": "AmneziaWG obfuscation",
+    "awgUseFields": "Fields",
+    "awgUseJSON": "JSON",
+    "awgGroupHandshake": "Handshake junk (Jc/Jmin/Jmax)",
+    "awgGroupSizes": "Packet sizes S1–S4",
+    "awgGroupHeaders": "Magic headers H1–H4",
+    "awgGroupSpecial": "AWG 2.0: special junk I1–I5 / Itime",
+    "awgGroupHandshakeJunk": "AWG 2.0: handshake junk J1–J3"
   },
   "settings": {
     "title": "Application Settings",
@@ -317,6 +329,7 @@
     "copied": "Copied!",
     "go": "Go to Site",
     "goBot": "Open Bot",
+    "goSite": "Go to Site",
     "copy": "Copy"
   },
   "common": {

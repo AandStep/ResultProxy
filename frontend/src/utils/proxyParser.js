@@ -421,11 +421,28 @@ const parseWireGuardConf = (content) => {
         return Number.isFinite(n) ? n : 0;
     };
     const amnezia = {};
-    const amneziaIntKeys = ["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "itime"];
+    const amneziaIntKeys = ["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "itime"];
+    const amneziaHeaderKeys = ["h1", "h2", "h3", "h4"];
     const amneziaStringKeys = ["i1", "i2", "i3", "i4", "i5", "j1", "j2", "j3"];
     for (const key of amneziaIntKeys) {
         if (iface[key] != null && String(iface[key]).trim() !== "") {
             const n = toInt(iface[key]);
+            if (n > 0) amnezia[key] = n;
+        }
+    }
+    // H1-H4 may be a single uint32 (AWG 1.0) or a "low-high" range string
+    // (AWG 2.0). Preserve strings as-is so the Go side can pick a random
+    // value within the range at engine build time. Plain numbers are kept
+    // as numbers for backward compatibility.
+    for (const key of amneziaHeaderKeys) {
+        const raw = iface[key];
+        if (raw == null) continue;
+        const s = String(raw).trim();
+        if (!s) continue;
+        if (s.includes("-")) {
+            amnezia[key] = s;
+        } else {
+            const n = toInt(s);
             if (n > 0) amnezia[key] = n;
         }
     }

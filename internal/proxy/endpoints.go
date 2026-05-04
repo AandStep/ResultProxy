@@ -17,6 +17,7 @@ package proxy
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 )
 
@@ -195,10 +196,10 @@ func amneziaFromExtra(extra map[string]interface{}) *SBWireGuardAmnezia {
 		S2:    intFromAny(m["s2"]),
 		S3:    intFromAny(m["s3"]),
 		S4:    intFromAny(m["s4"]),
-		H1:    uint32(intFromAny(m["h1"])),
-		H2:    uint32(intFromAny(m["h2"])),
-		H3:    uint32(intFromAny(m["h3"])),
-		H4:    uint32(intFromAny(m["h4"])),
+		H1:    amneziaHeaderString(m["h1"]),
+		H2:    amneziaHeaderString(m["h2"]),
+		H3:    amneziaHeaderString(m["h3"]),
+		H4:    amneziaHeaderString(m["h4"]),
 		I1:    stringFromExtraValue(m["i1"]),
 		I2:    stringFromExtraValue(m["i2"]),
 		I3:    stringFromExtraValue(m["i3"]),
@@ -212,5 +213,72 @@ func amneziaFromExtra(extra map[string]interface{}) *SBWireGuardAmnezia {
 	if *am == (SBWireGuardAmnezia{}) {
 		return nil
 	}
+	normalizeAmnezia(am)
 	return am
+}
+
+// amneziaHeaderString returns the H1-H4 value as a string in the form
+// expected by the upstream sing-box-extended *Xbadoption.Range type:
+// either "N" (AWG 1.0, fixed magic header) or "low-high" (AWG 2.0,
+// header-range syntax). The upstream JSON unmarshaller picks a random
+// value within the range per packet on the engine side.
+func amneziaHeaderString(v interface{}) string {
+	if v == nil {
+		return ""
+	}
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s)
+	}
+	if n := intFromAny(v); n > 0 {
+		return strconv.Itoa(n)
+	}
+	return ""
+}
+
+func normalizeAmnezia(am *SBWireGuardAmnezia) {
+	if am == nil {
+		return
+	}
+	if am.JC < 0 {
+		am.JC = 0
+	}
+	if am.JMin < 0 {
+		am.JMin = 0
+	}
+	if am.JMax < 0 {
+		am.JMax = 0
+	}
+	if am.JMin > 0 && am.JMax > 0 && am.JMin > am.JMax {
+		am.JMin, am.JMax = am.JMax, am.JMin
+	}
+	if am.S1 < 0 {
+		am.S1 = 0
+	}
+	if am.S2 < 0 {
+		am.S2 = 0
+	}
+	if am.S3 < 0 {
+		am.S3 = 0
+	}
+	if am.S4 < 0 {
+		am.S4 = 0
+	}
+	if am.ITime < 0 {
+		am.ITime = 0
+	}
+	const maxJunkLen = 4096
+	clip := func(s string) string {
+		if len(s) > maxJunkLen {
+			return s[:maxJunkLen]
+		}
+		return s
+	}
+	am.I1 = clip(am.I1)
+	am.I2 = clip(am.I2)
+	am.I3 = clip(am.I3)
+	am.I4 = clip(am.I4)
+	am.I5 = clip(am.I5)
+	am.J1 = clip(am.J1)
+	am.J2 = clip(am.J2)
+	am.J3 = clip(am.J3)
 }

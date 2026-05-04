@@ -72,7 +72,7 @@ export const MainLayout = ({ children }) => {
 
       <div
         ref={mainScrollRef}
-        className="flex-1 flex flex-col relative overflow-y-auto min-w-0 min-h-0 border-t border-zinc-800"
+        className="flex-1 flex flex-col relative overflow-y-auto min-w-0 min-h-0 border-t border-zinc-800 [scrollbar-gutter:stable]"
       >
         <MobileHeader />
 

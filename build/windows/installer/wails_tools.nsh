@@ -14,7 +14,7 @@
     !define INFO_PRODUCTNAME "ResultV"
 !endif
 !ifndef INFO_PRODUCTVERSION
-    !define INFO_PRODUCTVERSION "3.1.0"
+    !define INFO_PRODUCTVERSION "3.1.2"
 !endif
 !ifndef INFO_COPYRIGHT
     !define INFO_COPYRIGHT "Copyright........."
@@ -228,9 +228,14 @@ RequestExecutionLevel "${REQUEST_EXECUTION_LEVEL}"
 !macro wails.associateCustomProtocols
     ; Create custom protocols associations
     
+      !insertmacro CUSTOM_PROTOCOL_ASSOCIATE "resultv" "ResultV deeplink" "$INSTDIR\${PRODUCT_EXECUTABLE},0" "$INSTDIR\${PRODUCT_EXECUTABLE} $\"%1$\""
+
+    
 !macroend
 
 !macro wails.unassociateCustomProtocols
     ; Delete app custom protocol associations
+    
+      !insertmacro CUSTOM_PROTOCOL_UNASSOCIATE "resultv"
     
 !macroend
