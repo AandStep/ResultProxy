@@ -1,7 +1,20 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// PoC test URI lives in local.properties (gitignored) so we don't leak
+// credentials. Read once at configuration time and surface via BuildConfig.
+val pocVlessUri: String = run {
+    val props = Properties()
+    val f = rootProject.file("local.properties")
+    if (f.exists()) {
+        f.inputStream().use { props.load(it) }
+    }
+    props.getProperty("vless.uri", "")
 }
 
 android {
@@ -13,18 +26,17 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "0.1.0-poc"
+        versionName = "0.2.0-poc"
 
-        ndk {
-            // libbox.aar ships all four ABIs; ship the same so emulators
-            // (x86_64) and real devices (arm64-v8a) both work during PoC.
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
-        }
+        buildConfigField("String", "VLESS_URI", "\"${pocVlessUri.replace("\"", "\\\"")}\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            // Release ships every ABI so phones (arm64-v8a) and emulators
+            // (x86_64) both run. Adds ~80 MB versus debug.
+            ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64") }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -32,6 +44,9 @@ android {
         }
         debug {
             isMinifyEnabled = false
+            // Debug only x86_64 — keeps APK small for the emulator and
+            // dramatically speeds up incremental installs.
+            ndk { abiFilters += "x86_64" }
         }
     }
 
@@ -46,6 +61,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {

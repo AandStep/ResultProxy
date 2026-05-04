@@ -70,7 +70,7 @@ func main() {
 		Windows: &windows.Options{
 			WebviewIsTransparent:              false,
 			WindowIsTranslucent:               false,
-			DisableWindowIcon:                 true,
+			DisableWindowIcon:                 false,
 			DisableFramelessWindowDecorations: false,
 			WebviewUserDataPath:               system.WebviewUserDataPath(),
 			WindowClassName:                   system.WailsWindowClassResultV,

@@ -519,7 +519,7 @@ export const HomeView = () => {
                     <p
                       className={`text-[9px] font-bold leading-tight ${isProxyDead ? "text-zinc-600" : "text-[#007E3A]"}`}
                     >
-                      {formatSpeed(speedHistory.down[19])}
+                      {formatSpeed(Math.max(...speedHistory.down))}
                     </p>
                   </div>
                   <p
@@ -551,7 +551,7 @@ export const HomeView = () => {
                     <p
                       className={`text-[9px] font-bold leading-tight ${isProxyDead ? "text-zinc-600" : "text-[#00A819]"}`}
                     >
-                      {formatSpeed(speedHistory.up[19])}
+                      {formatSpeed(Math.max(...speedHistory.up))}
                     </p>
                   </div>
                   <p

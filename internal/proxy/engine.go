@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,6 +64,10 @@ type EngineConfig struct {
 	DNSServers   []string
 	TunIPv4      string
 	DataDir      string
+	// IsAndroid must be set to true when building a config for Android.
+	// We cannot rely on runtime.GOOS because gomobile bind compiles on the
+	// host OS (Windows/Linux/macOS), so runtime.GOOS is never "android".
+	IsAndroid    bool
 }
 
 type Engine interface {
@@ -550,7 +555,7 @@ func splitDNSServer(raw string) (string, int) {
 func buildRoute(cfg EngineConfig) *SBRoute {
 	route := &SBRoute{
 		Final:      "proxy",
-		AutoDetect: true,
+		AutoDetect: !cfg.IsAndroid && runtime.GOOS != "android",
 	}
 
 	var rules []SBRouteRule

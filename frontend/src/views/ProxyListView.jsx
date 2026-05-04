@@ -583,7 +583,12 @@ export const ProxyListView = () => {
                             <span className="text-zinc-400">{totalTrafficStr}</span>
                           </span>
                         )}
-                        <span className="ml-auto text-xs text-zinc-400 bg-zinc-900/90 px-2 py-0.5 rounded-lg shrink-0 border border-zinc-700/50">
+                        {isSub && expireLine && (
+                          <span className="ml-auto text-xs text-zinc-400 whitespace-nowrap text-right">
+                            {expireLine}
+                          </span>
+                        )}
+                        <span className="text-xs text-zinc-400 bg-zinc-900/90 px-2 py-0.5 rounded-lg shrink-0 border border-zinc-700/50">
                           {groupProxies.length}
                         </span>
                         <ChevronDown
@@ -641,11 +646,6 @@ export const ProxyListView = () => {
                   </div>
                   {isSub && (
                     <div className="flex flex-col gap-1.5 pl-0">
-                      {expireLine && (
-                        <p className="text-xs text-zinc-400 leading-snug">
-                          {expireLine}
-                        </p>
-                      )}
                       <p className="text-[11px] text-zinc-500 leading-snug">
                         {t("proxyList.subRefreshHint")}
                       </p>
