@@ -1,12 +1,12 @@
 {
-  "version": "3.1.1",
+  "version": "3.1.2",
   "releaseTitle": {
-    "ru": "Поддержка macOS и Linux (бета)",
-    "en": "macOS and Linux support (beta)"
+    "ru": "Поддержка AWG 2.0, обновление ядра, улучшение UI",
+    "en": "AWG 2.0 support, core update, UI improvements"
   },
   "releaseNotes": {
-    "ru": "ResultV теперь собирается под macOS и Linux в дополнение к Windows: системный прокси, kill switch, автозапуск, белые списки приложений, deeplink resultv:// — всё перенесено на новые платформы. ВНИМАНИЕ: сборки для macOS и Linux пока слабо протестированы и считаются сырыми. Мы рассчитываем на обратную связь от пользователей, чтобы выловить и исправить неточности в работе приложения — пишите о проблемах в Telegram или на GitHub.",
-    "en": "ResultV now builds for macOS and Linux in addition to Windows: system proxy, kill switch, autostart, app whitelist, resultv:// deep links — all ported to the new platforms. NOTE: macOS and Linux builds are lightly tested and considered a raw/beta release. We rely on user feedback to catch and fix rough edges — please report issues on Telegram or GitHub."
+    "ru": "Добавлена поддержка полей для AWG 2.0. Обновлено ядро sing-box до 1.13.11-extended-2.0.2. Улучшена UI составляющая приложения.",
+    "en": "Support for AWG 2.0 fields has been added. The sing-box core has been updated to 1.13.11-extended-2.0.2. The UI has been improved."
   },
   "downloadUrl": "https://result-proxy.ru/"
 }
