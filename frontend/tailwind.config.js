@@ -20,6 +20,18 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
-  theme: { extend: {} },
+  theme: {
+    extend: {
+      keyframes: {
+        marquee: {
+          '0%, 15%': { transform: 'translateX(0)' },
+          '85%, 100%': { transform: 'translateX(var(--scroll-amount))' },
+        }
+      },
+      animation: {
+        marquee: 'marquee 1s linear infinite alternate',
+      }
+    }
+  },
   plugins: [],
 }

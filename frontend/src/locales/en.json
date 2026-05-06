@@ -263,7 +263,9 @@
     "unfavoriteAria": "Remove from favorites",
     "status": {
       "connected": "Connected",
-      "connect": "Connect"
+      "connect": "Connect",
+      "connecting": "Connecting",
+      "disconnect": "Disconnect"
     }
   },
   "logs": {
@@ -308,7 +310,7 @@
     "proxy_section_desc": "Reliable IPv4 and IPv6 proxies for any tasks from our partners",
     "imp_vpn": {
       "discount": "20% off from impVPN",
-      "discount_desc": "Open the Telegram bot via the link below, enter the promo code and get 20% off the best VPN servers",
+      "discount_desc": "Open the Telegram bot via the link below, enter the promo code and get a 20% top-up bonus on the best VPN servers",
       "promo_title": "20% Promo Code"
     },
     "proxy_seller": {

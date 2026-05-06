@@ -28,6 +28,7 @@ import {
   Star,
 } from "lucide-react";
 import { FlagIcon } from "../components/ui/FlagIcon";
+import { HoverMarquee } from "../components/ui/HoverMarquee";
 import { useConfigContext } from "../context/ConfigContext";
 import { useConnectionContext } from "../context/ConnectionContext";
 import { useTranslation } from "react-i18next";
@@ -131,8 +132,11 @@ export const ProxyListView = () => {
   const {
     deleteProxy: performDelete,
     selectAndConnect,
+    disconnectOnly,
     activeProxy,
     isConnected,
+    isConnecting,
+    failedProxy,
     pings,
   } = useConnectionContext();
 
@@ -335,11 +339,17 @@ export const ProxyListView = () => {
   };
 
   const handleCardConnect = (proxy) => {
+    if (failedProxy && failedProxy.id === proxy.id) {
+      disconnectOnly();
+      return;
+    }
     selectAndConnect(proxy);
   };
 
   const renderProxyCard = (proxy) => {
     const isActive = isConnected && activeProxy?.id === proxy.id;
+    const isCardConnecting = isConnecting && activeProxy?.id === proxy.id;
+    const isCardFailed = !!failedProxy && failedProxy.id === proxy.id;
     const isFromSubscription = Boolean(proxy.subscriptionUrl);
     const isAutoProxy = proxy.type?.toUpperCase() === "AUTO";
     const isFav = favoriteIds.has(String(proxy.id));
@@ -376,7 +386,7 @@ export const ProxyListView = () => {
       <div
         key={proxy.id}
         onClick={() => handleCardConnect(proxy)}
-        className={`bg-zinc-900 p-4 rounded-[12px] border transition-all flex flex-col cursor-pointer group/card outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive ? "border-[#00A819] shadow-[0_0_20px_rgba(0,168,25,0.1)]" : "border-zinc-800 hover:border-[#00A819] hover:bg-zinc-800/30"}`}
+        className={`bg-zinc-900 p-4 rounded-[12px] border transition-all flex flex-col cursor-pointer group/card outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isCardConnecting ? "border-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.15)]" : isCardFailed ? "border-rose-500 shadow-[0_0_20px_rgba(244,63,94,0.15)]" : isActive ? "border-[#00A819] shadow-[0_0_20px_rgba(0,168,25,0.1)]" : "border-zinc-800 hover:border-[#00A819] hover:bg-zinc-800/30"}`}
       >
         <div className="flex items-start gap-3 mb-4">
           <div className="shrink-0 flex items-center justify-center w-10 h-10 bg-zinc-800/50 rounded-xl border border-zinc-700/50">
@@ -388,8 +398,8 @@ export const ProxyListView = () => {
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold text-white truncate group-hover/card:text-[#00A819] transition-colors">
-                {formatProxyDisplayName(proxy.name, proxy.country)}
+              <h3 className="text-sm font-bold text-white group-hover/card:text-[#00A819] transition-colors min-w-0 flex-1">
+                <HoverMarquee text={formatProxyDisplayName(proxy.name, proxy.country)} />
               </h3>
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap bg-zinc-800 text-zinc-300 border border-zinc-700/60">
                 {protocolLabel}
@@ -448,11 +458,15 @@ export const ProxyListView = () => {
                 e.stopPropagation();
                 handleCardConnect(proxy);
               }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors shrink-0 border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isActive ? "bg-[#00A819] text-zinc-950 font-bold" : "bg-[#007E3A]/10 text-[#00A819] hover:bg-[#007E3A]/20"}`}
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors shrink-0 border-transparent outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ${isCardConnecting ? "bg-amber-500/15 text-amber-400 font-bold" : isCardFailed ? "bg-rose-500/15 text-rose-400 font-bold hover:bg-rose-500/25" : isActive ? "bg-[#00A819] text-zinc-950 font-bold" : "bg-[#007E3A]/10 text-[#00A819] hover:bg-[#007E3A]/20"}`}
             >
-              {isActive
-                ? t("proxyList.status.connected")
-                : t("proxyList.status.connect")}
+              {isCardConnecting
+                ? t("proxyList.status.connecting")
+                : isCardFailed
+                  ? t("proxyList.status.disconnect")
+                  : isActive
+                    ? t("proxyList.status.connected")
+                    : t("proxyList.status.connect")}
             </button>
           </div>
         </div>
