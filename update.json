@@ -1,12 +1,12 @@
 {
-  "version": "3.1.2",
+  "version": "3.1.3",
   "releaseTitle": {
-    "ru": "Поддержка AWG 2.0, обновление ядра, улучшение UI",
-    "en": "AWG 2.0 support, core update, UI improvements"
+    "ru": "Улучшения UI и исправление ошибок",
+    "en": "UI improvements and bug fixes"
   },
   "releaseNotes": {
-    "ru": "Добавлена поддержка полей для AWG 2.0. Обновлено ядро sing-box до 1.13.11-extended-2.0.2. Улучшена UI составляющая приложения.",
-    "en": "Support for AWG 2.0 fields has been added. The sing-box core has been updated to 1.13.11-extended-2.0.2. The UI has been improved."
+    "ru": "Улучшения UI и исправление ошибок.",
+    "en": "UI improvements and bug fixes."
   },
   "downloadUrl": "https://result-proxy.ru/"
 }
