@@ -11,6 +11,7 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.resultv.android.MainActivity
 import com.resultv.android.R
+import java.util.concurrent.Executors
 
 private const val TAG = "ResultV/Service"
 private const val CHANNEL_ID = "resultv_vpn"
@@ -27,18 +28,26 @@ const val EXTRA_CONFIG_JSON = "configJson"
  */
 class ResultVpnService : VpnService() {
 
-    // Owned by the service so we can close the fd when the user hits
-    // Disconnect — without this, the kernel keeps the tun alive and
-    // Android keeps showing the VPN key icon even after sing-box is dead.
     @Volatile var tunPfd: ParcelFileDescriptor? = null
+
+    // libbox start/stop is synchronous and blocks (DNS, REALITY handshake,
+    // tun setup) — keep it off the main thread to avoid ANR on Connect.
+    private val worker = Executors.newSingleThreadExecutor { r ->
+        Thread(r, "ResultV-Box").apply { isDaemon = true }
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.i(TAG, "received STOP")
-                BoxModule.stop()
+                // Close the tun fd up front — this drops the system VPN
+                // lock icon immediately. libbox.closeService() takes a
+                // couple of seconds to drain connections, so push it to
+                // the worker and let the user see Idle right away.
                 closeTun()
+                VpnState.set(VpnStatus.Idle)
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                worker.execute { BoxModule.stop() }
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -49,14 +58,20 @@ class ResultVpnService : VpnService() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
-                startForeground(NOTIFICATION_ID, buildNotification())
-                try {
-                    BoxModule.start(this, config)
-                } catch (t: Throwable) {
-                    Log.e(TAG, "BoxModule.start failed", t)
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                    return START_NOT_STICKY
+                VpnState.set(VpnStatus.Connecting)
+                startForeground(NOTIFICATION_ID, buildNotification(VpnStatus.Connecting))
+                worker.execute {
+                    try {
+                        BoxModule.start(this, config)
+                        VpnState.set(VpnStatus.Connected)
+                        renotify(buildNotification(VpnStatus.Connected))
+                    } catch (t: Throwable) {
+                        Log.e(TAG, "BoxModule.start failed", t)
+                        VpnState.set(VpnStatus.Error(t.message ?: t.javaClass.simpleName))
+                        closeTun()
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
                 }
                 return START_STICKY
             }
@@ -65,15 +80,18 @@ class ResultVpnService : VpnService() {
 
     override fun onRevoke() {
         Log.i(TAG, "VPN permission revoked")
-        BoxModule.stop()
         closeTun()
+        VpnState.set(VpnStatus.Idle)
         stopForeground(STOP_FOREGROUND_REMOVE)
+        worker.execute { BoxModule.stop() }
         stopSelf()
     }
 
     override fun onDestroy() {
-        BoxModule.stop()
         closeTun()
+        VpnState.set(VpnStatus.Idle)
+        worker.execute { BoxModule.stop() }
+        worker.shutdown()
         super.onDestroy()
     }
 
@@ -87,7 +105,11 @@ class ResultVpnService : VpnService() {
         }
     }
 
-    private fun buildNotification(): Notification {
+    private fun renotify(n: Notification) {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, n)
+    }
+
+    private fun buildNotification(status: VpnStatus): Notification {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
@@ -102,12 +124,26 @@ class ResultVpnService : VpnService() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE,
         )
+        val stopIntent = PendingIntent.getService(
+            this, 1,
+            Intent(this, ResultVpnService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val text = when (status) {
+            VpnStatus.Connecting -> "Connecting…"
+            VpnStatus.Connected -> "Connected"
+            VpnStatus.Idle -> "Idle"
+            is VpnStatus.Error -> "Error: ${status.message}"
+        }
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText("VPN running")
+            .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(openApp)
             .setOngoing(true)
+            .addAction(
+                Notification.Action.Builder(null, "Disconnect", stopIntent).build()
+            )
             .build()
     }
 }

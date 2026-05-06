@@ -1,6 +1,7 @@
 package com.resultv.android.vpn
 
 import android.content.Context
+import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import android.util.Log
 import libbox.CommandServer
@@ -53,6 +54,10 @@ object BoxModule {
             commandServerListenPort = 0
             // Workaround for golang.org/issues/68760 on Android.
             fixAndroidStack = true
+            // Routes sing-box's log entries through our CommandServerHandler.
+            // writeDebugMessage so they land in logcat. Without this flag the
+            // log subscriber stays silent.
+            debug = true
         }
         Libbox.setup(opts)
         setupDone = true
@@ -154,13 +159,7 @@ private class BoxPlatform(private val service: ResultVpnService) : PlatformInter
             builder.addDnsServer("8.8.8.8")
         }
 
-        // Bypass our own package so the gRPC command socket and any
-        // outbound connect from sing-box itself never recurses into the tunnel.
-        try {
-            builder.addDisallowedApplication(service.packageName)
-        } catch (t: Throwable) {
-            Log.w(TAG, "addDisallowedApplication failed", t)
-        }
+        applyAppRouting(builder)
 
         builder.setBlocking(false)
 
@@ -178,6 +177,61 @@ private class BoxPlatform(private val service: ResultVpnService) : PlatformInter
         return fd
     }
 
+    /**
+     * Apply per-app routing settings to the VpnService.Builder. The two
+     * Allow/Disallow lists are mutually exclusive at the OS level — calling
+     * one bars the other from being called on the same Builder.
+     *
+     * - Mode `All`: nothing is whitelisted/blacklisted by the user, but we
+     *   still must bypass our own package so sing-box's outbound connect
+     *   to the proxy server doesn't recurse into our tunnel.
+     * - Mode `AllowList`: only the user's selection goes through the VPN.
+     *   Our own UID is automatically excluded (it's not in the selection),
+     *   so no extra bypass call is needed.
+     * - Mode `DisallowList`: user's selection bypasses the VPN; we add our
+     *   own package to that list as well.
+     */
+    private fun applyAppRouting(builder: VpnService.Builder) {
+        val ownPkg = service.packageName
+        val s = AppRoutingRepository.state.value
+        when (s.mode) {
+            AppRoutingMode.All -> {
+                tryDisallow(builder, ownPkg)
+            }
+            AppRoutingMode.AllowList -> {
+                if (s.selectedPackages.isEmpty()) {
+                    // Empty allow-list would route ZERO traffic (including
+                    // ourselves). Fall back to default + own bypass.
+                    tryDisallow(builder, ownPkg)
+                    return
+                }
+                for (pkg in s.selectedPackages) {
+                    if (pkg == ownPkg) continue
+                    try {
+                        builder.addAllowedApplication(pkg)
+                    } catch (t: Throwable) {
+                        Log.w(TAG, "addAllowedApplication($pkg) failed", t)
+                    }
+                }
+            }
+            AppRoutingMode.DisallowList -> {
+                tryDisallow(builder, ownPkg)
+                for (pkg in s.selectedPackages) {
+                    if (pkg == ownPkg) continue
+                    tryDisallow(builder, pkg)
+                }
+            }
+        }
+    }
+
+    private fun tryDisallow(builder: VpnService.Builder, pkg: String) {
+        try {
+            builder.addDisallowedApplication(pkg)
+        } catch (t: Throwable) {
+            Log.w(TAG, "addDisallowedApplication($pkg) failed", t)
+        }
+    }
+
     override fun usePlatformAutoDetectInterfaceControl(): Boolean = true
 
     override fun autoDetectInterfaceControl(fd: Int) {
@@ -187,6 +241,8 @@ private class BoxPlatform(private val service: ResultVpnService) : PlatformInter
         val ok = service.protect(fd)
         if (!ok) {
             Log.w(TAG, "protect($fd) returned false")
+        } else {
+            Log.d(TAG, "protect($fd) ok")
         }
     }
 
