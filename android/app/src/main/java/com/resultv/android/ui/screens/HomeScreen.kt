@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,12 +40,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.resultv.android.R
 import com.resultv.android.theme.Brand
 import com.resultv.android.ui.components.PowerButton
 import com.resultv.android.ui.components.ServerRow
+import com.resultv.android.ui.components.Sparkline
 import com.resultv.android.ui.components.StatusHeader
 import com.resultv.android.ui.components.flagFromCountry
 import com.resultv.android.vpn.Profile
@@ -124,11 +128,96 @@ fun HomeScreen(
             }
         }
 
+        if (status is VpnStatus.Connected) {
+            TrafficStatsRow()
+        }
+
         // Promo / add-server entry only when idle.
         if (status is VpnStatus.Idle || status is VpnStatus.Error) {
             AddProfileShortcut(onClick = onOpenAdd)
         }
     }
+}
+
+@Composable
+private fun TrafficStatsRow() {
+    val stats by com.resultv.android.vpn.TrafficStats.snapshot.collectAsStateWithLifecycle()
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        StatCard(
+            label = stringResource(R.string.home_stat_download),
+            total = formatBytes(stats.downloadBytes),
+            speed = formatBps(stats.downloadBps),
+            history = stats.downloadHistory.map { it.toFloat() },
+            color = Brand.Green,
+            modifier = Modifier.weight(1f),
+        )
+        StatCard(
+            label = stringResource(R.string.home_stat_upload),
+            total = formatBytes(stats.uploadBytes),
+            speed = formatBps(stats.uploadBps),
+            history = stats.uploadHistory.map { it.toFloat() },
+            color = Brand.GreenLight,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+@Composable
+private fun StatCard(
+    label: String,
+    total: String,
+    speed: String,
+    history: List<Float>,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Brand.Surface),
+    ) {
+        Column(modifier = Modifier.padding(18.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, style = MaterialTheme.typography.labelMedium, color = Brand.MutedText)
+                Text(speed, style = MaterialTheme.typography.labelMedium, color = color)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                total,
+                style = MaterialTheme.typography.headlineSmall,
+                color = color,
+            )
+            Spacer(Modifier.height(10.dp))
+            Sparkline(
+                values = history,
+                color = color,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp),
+            )
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var v = bytes.toDouble() / 1024.0
+    var i = 0
+    while (v >= 1024 && i < units.size - 1) { v /= 1024.0; i++ }
+    return String.format("%.2f %s", v, units[i])
+}
+
+private fun formatBps(bps: Long): String {
+    if (bps == 0L) return "0 B/s"
+    return formatBytes(bps) + "/s"
 }
 
 @Composable
@@ -142,14 +231,14 @@ private fun ActiveProfileRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onToggle)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 18.dp, vertical = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Box(
             modifier = Modifier
-                .size(42.dp)
-                .clip(RoundedCornerShape(11.dp))
+                .size(54.dp)
+                .clip(RoundedCornerShape(14.dp))
                 .background(
                     if (connected) Brand.Green.copy(alpha = 0.18f)
                     else Color.White.copy(alpha = 0.07f)
@@ -169,7 +258,7 @@ private fun ActiveProfileRow(
                     contentDescription = null,
                     tint = Brand.GreenLight,
                 )
-                country != null -> Text(text = flagFromCountry(country), style = MaterialTheme.typography.titleLarge)
+                country != null -> Text(text = flagFromCountry(country), style = MaterialTheme.typography.headlineSmall)
                 else -> Icon(
                     imageVector = Icons.Outlined.Public,
                     contentDescription = null,
@@ -180,13 +269,13 @@ private fun ActiveProfileRow(
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "CURRENT SERVER",
+                text = stringResource(R.string.home_current_server),
                 style = MaterialTheme.typography.labelSmall,
                 color = Brand.MutedText,
             )
             Text(
-                text = active?.name ?: "No profile selected",
-                style = MaterialTheme.typography.titleSmall,
+                text = active?.name ?: stringResource(R.string.home_no_profile_selected),
+                style = MaterialTheme.typography.titleMedium,
                 color = if (connected) Brand.GreenLight else MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -195,7 +284,9 @@ private fun ActiveProfileRow(
 
         Icon(
             imageVector = Icons.Outlined.ExpandMore,
-            contentDescription = if (expanded) "Collapse" else "Expand",
+            contentDescription = stringResource(
+                if (expanded) R.string.action_collapse else R.string.action_expand,
+            ),
             tint = Brand.SecondaryText,
         )
     }
@@ -217,7 +308,7 @@ private fun ProfileDropdown(
     ) {
         if (profiles.isEmpty()) {
             Text(
-                text = "No profiles yet — add one to get started.",
+                text = stringResource(R.string.home_no_profiles_yet),
                 style = MaterialTheme.typography.bodySmall,
                 color = Brand.MutedText,
                 modifier = Modifier.padding(8.dp),
@@ -238,6 +329,7 @@ private fun ProfileDropdown(
                         isActive = p.id == activeId,
                         isFavorite = false,
                         onClick = { onSelect(p) },
+                        latencyMs = mockLatencyMs(p.id),
                     )
                 }
             }
@@ -245,7 +337,7 @@ private fun ProfileDropdown(
 
         if (profiles.size > 6) {
             Text(
-                text = "View all ${profiles.size} profiles",
+                text = stringResource(R.string.home_view_all_profiles, profiles.size),
                 style = MaterialTheme.typography.labelMedium,
                 color = Brand.SecondaryText,
                 modifier = Modifier
@@ -288,9 +380,9 @@ private fun AddProfileShortcut(onClick: () -> Unit) {
             )
         }
         Column {
-            Text("Add server", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.home_add_server), style = MaterialTheme.typography.titleSmall)
             Text(
-                "Paste link or subscription URL",
+                stringResource(R.string.home_add_server_subtitle),
                 style = MaterialTheme.typography.bodySmall,
                 color = Brand.MutedText,
             )
@@ -314,6 +406,15 @@ internal fun profileIsAuto(p: Profile): Boolean {
     return runCatching {
         JSONObject(src).optString("type").equals("AUTO", ignoreCase = true)
     }.getOrDefault(false)
+}
+
+/**
+ * Deterministic placeholder latency for the server dropdown. Replace with
+ * real probe data once the pinger is wired up — single integer, ms.
+ */
+internal fun mockLatencyMs(seed: String): Int {
+    val rng = java.util.Random(seed.hashCode().toLong())
+    return 30 + rng.nextInt(180)
 }
 
 internal fun profileSubtitle(p: Profile): String {

@@ -1,4 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="Theme.ResultV" parent="android:Theme.Material.NoActionBar" />
+
+    <!-- Cold-start splash. Activity's manifest theme; MainActivity
+         calls setTheme(R.style.Theme_ResultV) in onCreate() before
+         super.onCreate so the splash window background is replaced
+         the moment Compose takes over. -->
+    <style name="Theme.ResultV.Splash" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:statusBarColor">#FF060608</item>
+        <item name="android:navigationBarColor">#FF060608</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

@@ -44,9 +44,11 @@ android {
         }
         debug {
             isMinifyEnabled = false
-            // Debug only x86_64 — keeps APK small for the emulator and
-            // dramatically speeds up incremental installs.
-            ndk { abiFilters += "x86_64" }
+            // Debug picks ABI from -Pdebug.abi (defaults to x86_64 for the
+            // emulator). Pass -Pdebug.abi=arm64-v8a when installing on a
+            // real phone over USB. Single-ABI keeps the APK ~70 MB.
+            val abi = (project.findProperty("debug.abi") as String?) ?: "x86_64"
+            ndk { abiFilters += abi }
         }
     }
 

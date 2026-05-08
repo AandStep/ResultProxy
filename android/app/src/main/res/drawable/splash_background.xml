@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cold-start splash: dark app bg with the logo centred. The bitmap has
+     gravity=center so the source PNG is drawn at its native aspect inside
+     the 240dp box without any clipping. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <color android:color="#FF060608" />
+    </item>
+    <item
+        android:width="240dp"
+        android:height="240dp"
+        android:gravity="center">
+        <bitmap
+            android:src="@mipmap/ic_launcher_logo"
+            android:gravity="center"
+            android:tileMode="disabled" />
+    </item>
+</layer-list>

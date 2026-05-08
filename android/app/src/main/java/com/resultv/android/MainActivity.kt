@@ -1,58 +1,49 @@
 package com.resultv.android
 
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
+import androidx.annotation.StringRes
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.List
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Surface
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
-import com.resultv.android.ui.SubscriptionImportPanel
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.resultv.android.ui.AppPickerScreen
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
+import com.resultv.android.locale.LocaleManager
+import com.resultv.android.theme.Brand
+import com.resultv.android.theme.ResultVTheme
+import com.resultv.android.ui.screens.AddScreen
+import com.resultv.android.ui.screens.HomeScreen
+import com.resultv.android.ui.screens.ProxiesScreen
+import com.resultv.android.ui.screens.RulesScreen
+import com.resultv.android.ui.screens.SettingsScreen
 import com.resultv.android.vpn.ACTION_START
 import com.resultv.android.vpn.ACTION_STOP
-import com.resultv.android.vpn.AppRoutingMode
 import com.resultv.android.vpn.AppRoutingRepository
 import com.resultv.android.vpn.EXTRA_CONFIG_JSON
 import com.resultv.android.vpn.Profile
@@ -65,9 +56,31 @@ import org.json.JSONObject
 
 private const val TAG = "ResultV/UI"
 
+private enum class Tab(
+    @StringRes val titleRes: Int,
+    val icon: ImageVector,
+) {
+    Home(R.string.tab_home, Icons.Outlined.Home),
+    Proxies(R.string.tab_proxies, Icons.Outlined.List),
+    Add(R.string.tab_add, Icons.Outlined.Add),
+    Rules(R.string.tab_rules, Icons.Outlined.Apps),
+    Settings(R.string.tab_settings, Icons.Outlined.Settings),
+}
+
 class MainActivity : ComponentActivity() {
 
     private var pendingConfig: String? = null
+
+    /**
+     * Apply the user-selected locale before any resource is resolved. The
+     * Activity is recreated when the user picks a new language; on the
+     * second pass attachBaseContext sees the new persisted code and wraps
+     * the configuration so all stringResource() lookups pick the right
+     * `values-<lang>/strings.xml`.
+     */
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleManager.wrap(newBase))
+    }
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -82,33 +95,32 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Swap from the white splash theme (manifest) to the real app theme
+        // BEFORE super.onCreate, so the system's first frame after the
+        // splash window matches Compose's dark background instead of
+        // flashing white.
+        setTheme(R.style.Theme_ResultV)
         super.onCreate(savedInstanceState)
+        // Edge-to-edge: app draws behind status + nav bars; Scaffold's TopAppBar
+        // and NavigationBar consume the window-inset paddings so content above
+        // the gesture nav stays tappable.
+        enableEdgeToEdge()
         ProfileRepository.init(applicationContext)
         AppRoutingRepository.init(applicationContext)
+        com.resultv.android.vpn.RoutingRulesRepository.init(applicationContext)
+        com.resultv.android.vpn.SettingsRepository.init(applicationContext)
         seedFromBuildConfigIfEmpty()
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    var screen by remember { mutableStateOf(Screen.Home) }
-                    when (screen) {
-                        Screen.Home -> HomeScreen(
-                            dataDir = filesDir.absolutePath,
-                            onConnect = ::onConnectPressed,
-                            onDisconnect = ::onDisconnectPressed,
-                            onOpenAppRouting = { screen = Screen.AppRouting },
-                        )
-                        Screen.AppRouting -> AppPickerScreen(
-                            onClose = { screen = Screen.Home },
-                        )
-                    }
-                }
+            ResultVTheme {
+                AppShell(
+                    dataDir = filesDir.absolutePath,
+                    onPower = ::onPowerPressed,
+                )
             }
         }
     }
 
-    private enum class Screen { Home, AppRouting }
-
-    /** First-run convenience: if local.properties had a URI, import it once. */
+    /** First-run convenience: import the URI from `local.properties` once. */
     private fun seedFromBuildConfigIfEmpty() {
         val seed = BuildConfig.VLESS_URI
         if (seed.isBlank()) return
@@ -117,19 +129,32 @@ class MainActivity : ComponentActivity() {
         ProfileRepository.add(Profile.fromUri(name, seed))
     }
 
-    private fun onConnectPressed() {
-        val active = ProfileRepository.state.value.active
-        if (active == null) {
-            Log.e(TAG, "no active profile")
+    private fun onPowerPressed() {
+        val status = VpnState.status.value
+        when (status) {
+            is VpnStatus.Idle, is VpnStatus.Error -> connect()
+            is VpnStatus.Connecting, is VpnStatus.Connected -> disconnect()
+        }
+    }
+
+    private fun connect() {
+        val active = ProfileRepository.state.value.active ?: run {
+            Log.w(TAG, "no active profile to connect to")
             return
         }
         val dataDir = filesDir.absolutePath
+        val excludedDomains = com.resultv.android.vpn.RoutingRulesRepository
+            .state.value.domainExclusions.joinToString(",")
         val configJson = try {
             when {
                 active.entryJson.isNotBlank() ->
-                    Mobile.buildSingBoxConfigFromEntry(active.entryJson, dataDir, "8.8.8.8,1.1.1.1")
+                    Mobile.buildSingBoxConfigFromEntry(
+                        active.entryJson, dataDir, "8.8.8.8,1.1.1.1", excludedDomains,
+                    )
                 active.uri.isNotBlank() ->
-                    Mobile.buildSingBoxConfig(active.uri, dataDir, "8.8.8.8,1.1.1.1")
+                    Mobile.buildSingBoxConfig(
+                        active.uri, dataDir, "8.8.8.8,1.1.1.1", excludedDomains,
+                    )
                 else -> {
                     Log.e(TAG, "active profile has neither URI nor entry JSON")
                     return
@@ -149,14 +174,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun onDisconnectPressed() {
-        // Optimistic UI: flip status right away so the button reacts on
-        // the same frame. The service will repeat the same transition
-        // when it processes the intent — that's idempotent.
+    private fun disconnect() {
+        // Optimistic UI: state flips immediately so the button reacts on
+        // the same frame; the service repeats the same transition idempotently.
         VpnState.set(VpnStatus.Idle)
-        val intent = Intent(this, ResultVpnService::class.java).apply {
-            action = ACTION_STOP
-        }
+        val intent = Intent(this, ResultVpnService::class.java).apply { action = ACTION_STOP }
         startService(intent)
     }
 
@@ -171,182 +193,60 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(
+private fun AppShell(
     dataDir: String,
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onOpenAppRouting: () -> Unit,
+    onPower: () -> Unit,
 ) {
-    val status by VpnState.status.collectAsStateWithLifecycle()
-    val profiles by ProfileRepository.state.collectAsStateWithLifecycle()
-    val routing by AppRoutingRepository.state.collectAsStateWithLifecycle()
-    var addUri by remember { mutableStateOf("") }
-    var addError by remember { mutableStateOf<String?>(null) }
-    var showSubscriptionSheet by remember { mutableStateOf(false) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val focusManager = LocalFocusManager.current
-    val keyboard = LocalSoftwareKeyboardController.current
+    var tab by remember { mutableStateOf(Tab.Home) }
 
-    val tryAdd = tryAdd@{
-        val uri = addUri.trim()
-        if (uri.isEmpty()) { addError = "URI is empty"; return@tryAdd }
-        val name = try {
-            Mobile.parseProxyURI(uri)
-            nameFromUri(uri) ?: "Profile ${profiles.profiles.size + 1}"
-        } catch (t: Throwable) {
-            addError = t.message ?: "Invalid URI"
-            return@tryAdd
-        }
-        ProfileRepository.add(Profile.fromUri(name, uri))
-        addUri = ""
-        addError = null
-        keyboard?.hide()
-        focusManager.clearFocus()
-    }
-
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-            .pointerInput(Unit) {
-                detectTapGestures(onTap = {
-                    keyboard?.hide()
-                    focusManager.clearFocus()
-                })
-            },
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text("ResultV", style = MaterialTheme.typography.headlineMedium)
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Status: ${statusLabel(status)}", style = MaterialTheme.typography.titleMedium)
-            if (status is VpnStatus.Connecting) {
-                Spacer(Modifier.width(12.dp))
-                CircularProgressIndicator(modifier = Modifier.height(20.dp))
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = onConnect,
-                enabled = profiles.active != null &&
-                    (status is VpnStatus.Idle || status is VpnStatus.Error),
-            ) { Text("Connect") }
-            OutlinedButton(
-                onClick = onDisconnect,
-                enabled = status is VpnStatus.Connecting || status is VpnStatus.Connected,
-            ) { Text("Disconnect") }
-        }
-
-        TextButton(
-            onClick = onOpenAppRouting,
-            enabled = status is VpnStatus.Idle || status is VpnStatus.Error,
-        ) {
-            Text("Per-app routing: ${routingSummary(routing.mode, routing.selectedPackages.size)}")
-        }
-
-        Text("Profiles", style = MaterialTheme.typography.titleMedium)
-
-        OutlinedTextField(
-            value = addUri,
-            onValueChange = { addUri = it; addError = null },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("Paste vless:// / vmess:// / trojan:// / hy2:// / wg:// / awg://") },
-            singleLine = true,
-            isError = addError != null,
-            supportingText = addError?.let { { Text(it) } },
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-            keyboardActions = KeyboardActions(onDone = { tryAdd() }),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = tryAdd) { Text("Add") }
-            OutlinedButton(onClick = {
-                keyboard?.hide()
-                focusManager.clearFocus()
-                showSubscriptionSheet = true
-            }) { Text("From subscription") }
-            TextButton(onClick = {
-                addUri = ""
-                addError = null
-                keyboard?.hide()
-                focusManager.clearFocus()
-            }) { Text("Clear") }
-        }
-
-        if (showSubscriptionSheet) {
-            ModalBottomSheet(
-                onDismissRequest = { showSubscriptionSheet = false },
-                sheetState = sheetState,
-            ) {
-                SubscriptionImportPanel(
-                    dataDir = dataDir,
-                    onClose = { showSubscriptionSheet = false },
-                )
-            }
-        }
-
-        if (profiles.profiles.isEmpty()) {
-            Text(
-                "No profiles yet — paste a URI above.",
-                style = MaterialTheme.typography.bodySmall,
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Text(
+                        text = if (tab == Tab.Home) stringResource(R.string.app_name)
+                        else stringResource(tab.titleRes),
+                    )
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Brand.Bg,
+                ),
             )
-        } else {
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(profiles.profiles, key = { it.id }) { p ->
-                    ProfileRow(
-                        profile = p,
-                        isActive = p.id == profiles.activeId,
-                        onSelect = { ProfileRepository.setActive(p.id) },
-                        onDelete = { ProfileRepository.remove(p.id) },
+        },
+        bottomBar = {
+            NavigationBar(containerColor = Brand.Surface) {
+                Tab.entries.forEach { entry ->
+                    val title = stringResource(entry.titleRes)
+                    NavigationBarItem(
+                        selected = tab == entry,
+                        onClick = { tab = entry },
+                        icon = { Icon(entry.icon, contentDescription = title) },
+                        label = { Text(title) },
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ProfileRow(
-    profile: Profile,
-    isActive: Boolean,
-    onSelect: () -> Unit,
-    onDelete: () -> Unit,
-) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.padding(8.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            RadioButton(selected = isActive, onClick = onSelect)
-            Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                Text(profile.name, style = MaterialTheme.typography.titleSmall)
-                Text(
-                    profile.uri,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+        },
+    ) { padding ->
+        Box(modifier = Modifier.padding(padding)) {
+            when (tab) {
+                Tab.Home -> HomeScreen(
+                    onPowerPressed = onPower,
+                    onOpenProxies = { tab = Tab.Proxies },
+                    onOpenAdd = { tab = Tab.Add },
                 )
+                Tab.Proxies -> ProxiesScreen(onAddPressed = { tab = Tab.Add })
+                Tab.Add -> AddScreen(
+                    dataDir = dataDir,
+                    onDone = { tab = Tab.Proxies },
+                )
+                Tab.Rules -> RulesScreen()
+                Tab.Settings -> SettingsScreen()
             }
-            TextButton(onClick = onDelete) { Text("Delete") }
         }
     }
 }
 
-private fun routingSummary(mode: AppRoutingMode, count: Int): String = when (mode) {
-    AppRoutingMode.All -> "All apps"
-    AppRoutingMode.AllowList -> if (count == 0) "Whitelist (empty)" else "$count whitelisted"
-    AppRoutingMode.DisallowList -> if (count == 0) "Blacklist (empty)" else "$count blacklisted"
-}
-
-private fun statusLabel(s: VpnStatus): String = when (s) {
-    VpnStatus.Idle -> "Idle"
-    VpnStatus.Connecting -> "Connecting…"
-    VpnStatus.Connected -> "Connected"
-    is VpnStatus.Error -> "Error — ${s.message}"
-}
-
-/** Best-effort display name from a parsed URI: prefer fragment/name, fall back to host. */
-private fun nameFromUri(uri: String): String? = try {
+private fun nameFromUri(uri: String): String? = runCatching {
     val parsed = JSONObject(Mobile.parseProxyURI(uri))
     parsed.optString("name").ifBlank { parsed.optString("ip").ifBlank { null } }
-} catch (_: Throwable) {
-    null
-}
+}.getOrNull()

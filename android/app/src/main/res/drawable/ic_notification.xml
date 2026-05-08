@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Notification small icon. Status-bar small icons must be a flat alpha
+     mask — Android tints them itself (white on most launchers, system grey
+     on AOSP). One closed path, solid fill. A simple shield silhouette
+     reads cleanly at 24dp; the lowercase "r" detail of the brand mark
+     would smudge at this size. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,2 L20,5.2 L20,12 C20,16.6 16.5,20.6 12,22 C7.5,20.6 4,16.6 4,12 L4,5.2 Z" />
+</vector>

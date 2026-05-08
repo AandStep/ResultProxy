@@ -2,6 +2,7 @@ package com.resultv.android.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,8 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.resultv.android.R
 import com.resultv.android.theme.Brand
 
 /**
@@ -44,26 +47,36 @@ fun ServerRow(
     onClick: () -> Unit,
     onToggleFavorite: (() -> Unit)? = null,
     trailing: @Composable (() -> Unit)? = null,
+    /** Latest ping in milliseconds, or null if not yet probed. */
+    latencyMs: Int? = null,
 ) {
     val border = if (isActive) Brand.Green.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.06f)
     val bg = if (isActive) Brand.Green.copy(alpha = 0.10f) else Color.White.copy(alpha = 0.03f)
     val titleColor = if (isActive) Brand.GreenLight else MaterialTheme.colorScheme.onBackground
+    // Latency is colour-coded: green <80ms, amber 80–200ms, rose >200ms.
+    val latencyColor = when {
+        latencyMs == null -> Brand.MutedText
+        latencyMs < 80 -> Brand.GreenLight
+        latencyMs < 200 -> Brand.Warning
+        else -> Brand.Danger
+    }
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(18.dp))
             .background(bg)
-            .border(1.dp, border, RoundedCornerShape(14.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .border(1.dp, border, RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // Leading icon — flag emoji, AUTO bolt, or globe fallback.
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(10.dp))
+                .size(48.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(
                     if (isActive) Brand.Green.copy(alpha = 0.18f)
                     else Color.White.copy(alpha = 0.07f)
@@ -72,7 +85,7 @@ fun ServerRow(
                     1.dp,
                     if (isActive) Brand.Green.copy(alpha = 0.28f)
                     else Color.White.copy(alpha = 0.09f),
-                    RoundedCornerShape(10.dp)
+                    RoundedCornerShape(12.dp)
                 ),
             contentAlignment = Alignment.Center,
         ) {
@@ -81,17 +94,17 @@ fun ServerRow(
                     imageVector = Icons.Filled.Bolt,
                     contentDescription = null,
                     tint = Brand.GreenLight,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(24.dp),
                 )
                 countryCode != null -> Text(
                     text = flagFromCountry(countryCode),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                 )
                 else -> Icon(
                     imageVector = Icons.Outlined.Public,
                     contentDescription = null,
                     tint = Brand.SecondaryText,
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier.size(24.dp),
                 )
             }
         }
@@ -100,7 +113,7 @@ fun ServerRow(
             Text(
                 text = name,
                 color = titleColor,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -113,11 +126,20 @@ fun ServerRow(
             )
         }
 
+        // Latency reading — single number, colour reflects health.
+        Text(
+            text = if (latencyMs != null) "$latencyMs ms" else "— ms",
+            style = MaterialTheme.typography.labelMedium,
+            color = latencyColor,
+        )
+
         if (onToggleFavorite != null) {
             IconButton(onClick = onToggleFavorite, modifier = Modifier.size(28.dp)) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Filled.Star else Icons.Outlined.StarBorder,
-                    contentDescription = if (isFavorite) "Unfavorite" else "Favorite",
+                    contentDescription = stringResource(
+                        if (isFavorite) R.string.action_unfavorite else R.string.action_favorite,
+                    ),
                     tint = if (isFavorite) Brand.Favorite else Brand.MutedText,
                     modifier = Modifier.size(16.dp),
                 )

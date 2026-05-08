@@ -1,4 +1,185 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ResultV</string>
+
+    <!-- Bottom nav tabs -->
+    <string name="tab_home">Home</string>
+    <string name="tab_proxies">Proxies</string>
+    <string name="tab_add">Add</string>
+    <string name="tab_rules">Rules</string>
+    <string name="tab_settings">Settings</string>
+
+    <!-- Generic actions reused across screens -->
+    <string name="action_add">Add</string>
+    <string name="action_clear">Clear</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_save">Save</string>
+    <string name="action_back">Back</string>
+    <string name="action_remove">Remove</string>
+
+    <!-- Home screen -->
+    <string name="home_current_server">CURRENT SERVER</string>
+    <string name="home_no_profile_selected">No profile selected</string>
+    <string name="home_no_profiles_yet">No profiles yet — add one to get started.</string>
+    <string name="home_view_all_profiles">View all %1$d profiles</string>
+    <string name="home_add_server">Add server</string>
+    <string name="home_add_server_subtitle">Paste link or subscription URL</string>
+    <string name="home_stat_download">DOWNLOAD</string>
+    <string name="home_stat_upload">UPLOAD</string>
+    <string name="action_collapse">Collapse</string>
+    <string name="action_expand">Expand</string>
+    <string name="action_favorite">Favorite</string>
+    <string name="action_unfavorite">Unfavorite</string>
+
+    <!-- Status header above the power button -->
+    <string name="status_protected">Protected</string>
+    <string name="status_unprotected">Unprotected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_error">Error</string>
+    <string name="status_traffic_routed_via">Traffic routed via %1$s</string>
+    <string name="status_unprotected_subtitle">Your connection is not protected</string>
+
+    <!-- Settings screen -->
+    <string name="settings_section_general">GENERAL</string>
+    <string name="settings_section_dns">DNS SERVERS</string>
+    <string name="settings_section_about">ABOUT</string>
+    <string name="settings_kill_switch">Kill Switch</string>
+    <string name="settings_kill_switch_subtitle">Block internet if VPN drops (coming soon)</string>
+    <string name="settings_adblock">Ad blocking</string>
+    <string name="settings_adblock_subtitle">Block ads via DNS rewrites (coming soon)</string>
+    <string name="settings_ipv6">IPv6</string>
+    <string name="settings_ipv6_subtitle">Currently routed as IPv4-only</string>
+    <string name="settings_dns_hint">Pick a preset or enter custom servers (comma-separated).</string>
+    <string name="settings_dns_custom_placeholder">Custom: 1.1.1.1, 8.8.8.8</string>
+    <string name="settings_about_subtitle">Mobile preview · Phase 5+</string>
+    <string name="settings_dns_preset_auto">Auto</string>
+    <string name="settings_dns_preset_custom">Custom</string>
+
+    <!-- VPN service notification -->
+    <string name="vpn_status_connecting">Connecting…</string>
+    <string name="vpn_status_connected">Connected</string>
+    <string name="vpn_status_idle">Idle</string>
+    <string name="vpn_status_error">Error: %1$s</string>
+    <string name="vpn_action_disconnect">Disconnect</string>
+    <string name="vpn_channel_name">VPN status</string>
+
+    <!-- Add screen — quick imports + mode tabs -->
+    <string name="add_quick_clipboard_title">From clipboard</string>
+    <string name="add_quick_clipboard_subtitle">Paste links from buffer</string>
+    <string name="add_quick_file_title">From file</string>
+    <string name="add_quick_file_subtitle">Open .txt with URIs</string>
+    <string name="add_msg_file_empty">File is empty or unreadable</string>
+    <string name="add_msg_imported_file">Imported %1$d profile(s)</string>
+    <string name="add_msg_no_valid_uris_file">No valid URIs found in file</string>
+    <string name="add_msg_clipboard_empty">Clipboard is empty</string>
+    <string name="add_msg_imported_clipboard">Imported %1$d profile(s) from clipboard</string>
+    <string name="add_msg_no_valid_uris_clipboard">No valid URIs in clipboard</string>
+    <string name="add_mode_paste">Paste link</string>
+    <string name="add_mode_manual">Manual</string>
+    <string name="add_mode_subscription">Subscription</string>
+
+    <!-- Add screen — paste pane -->
+    <string name="add_paste_label">Share link</string>
+    <string name="add_paste_placeholder">vless:// vmess:// trojan:// hy2:// …</string>
+    <string name="add_paste_err_empty">URI is empty</string>
+    <string name="add_paste_err_invalid">Invalid URI</string>
+    <string name="add_paste_default_name">Profile</string>
+
+    <!-- Add screen — subscription pane -->
+    <string name="add_sub_label">Subscription URL</string>
+    <string name="add_sub_placeholder">https://example.com/sub/…</string>
+    <string name="add_sub_fetch">Fetch</string>
+    <string name="add_sub_fetching">Fetching…</string>
+    <string name="add_sub_selected">%1$d of %2$d selected</string>
+    <string name="add_sub_import">Import %1$d</string>
+
+    <!-- Manual protocol entry -->
+    <string name="manual_choose_protocol">Choose protocol</string>
+    <string name="manual_err_required">%1$s is required</string>
+    <string name="manual_err_build">Cannot build URI</string>
+    <string name="manual_err_invalid">Invalid configuration</string>
+    <string name="manual_choice_none">(none)</string>
+
+    <string name="manual_field_name">Name</string>
+    <string name="manual_field_name_placeholder">My server</string>
+    <string name="manual_field_host">Host</string>
+    <string name="manual_field_host_placeholder">example.com</string>
+    <string name="manual_field_port">Port</string>
+    <string name="manual_field_uuid">UUID</string>
+    <string name="manual_field_network">Network</string>
+    <string name="manual_field_security">Security</string>
+    <string name="manual_field_flow">Flow</string>
+    <string name="manual_field_sni">SNI</string>
+    <string name="manual_field_fingerprint">Fingerprint</string>
+    <string name="manual_field_pbk">Reality public key</string>
+    <string name="manual_field_sid">Reality short ID</string>
+    <string name="manual_field_path">Path / serviceName</string>
+    <string name="manual_field_host_header">Host header</string>
+    <string name="manual_field_alpn">ALPN</string>
+    <string name="manual_field_alpn_placeholder">h2,http/1.1</string>
+    <string name="manual_field_alterid">AlterID</string>
+    <string name="manual_field_tls">TLS</string>
+    <string name="manual_field_password">Password</string>
+    <string name="manual_field_method">Method</string>
+    <string name="manual_field_allow_insecure">Allow insecure</string>
+    <string name="manual_field_obfuscation">Obfuscation</string>
+    <string name="manual_field_obfs_password">Obfuscation password</string>
+    <string name="manual_field_private_key">Private key</string>
+    <string name="manual_field_peer_public_key">Peer public key</string>
+    <string name="manual_field_address">Interface address(es)</string>
+    <string name="manual_field_address_placeholder">10.0.0.2/32, fd00::2/128</string>
+    <string name="manual_field_allowed_ips">Allowed IPs</string>
+    <string name="manual_field_psk">Pre-shared key</string>
+    <string name="manual_field_mtu">MTU</string>
+
+    <!-- AmneziaWG protocol-defined parameter labels (not localised) -->
+    <string name="awg_jc" translatable="false">Jc</string>
+    <string name="awg_jmin" translatable="false">Jmin</string>
+    <string name="awg_jmax" translatable="false">Jmax</string>
+    <string name="awg_s1" translatable="false">S1</string>
+    <string name="awg_s2" translatable="false">S2</string>
+    <string name="awg_s3" translatable="false">S3</string>
+    <string name="awg_s4" translatable="false">S4</string>
+    <string name="awg_h1" translatable="false">H1</string>
+    <string name="awg_h2" translatable="false">H2</string>
+    <string name="awg_h3" translatable="false">H3</string>
+    <string name="awg_h4" translatable="false">H4</string>
+    <string name="awg_i1" translatable="false">I1</string>
+    <string name="awg_i2" translatable="false">I2</string>
+    <string name="awg_i3" translatable="false">I3</string>
+    <string name="awg_i4" translatable="false">I4</string>
+    <string name="awg_i5" translatable="false">I5</string>
+    <string name="awg_j1" translatable="false">J1</string>
+    <string name="awg_j2" translatable="false">J2</string>
+    <string name="awg_j3" translatable="false">J3</string>
+
+    <!-- Proxies screen -->
+    <string name="proxies_count">%1$d profiles</string>
+    <string name="proxies_delete_cd">Delete profile</string>
+    <string name="proxies_delete_title">Delete profile?</string>
+    <string name="proxies_delete_message">"%1$s" will be removed.</string>
+    <string name="proxies_empty_title">No profiles yet</string>
+    <string name="proxies_empty_subtitle">Paste a share link or import a subscription URL to get started.</string>
+
+    <!-- Rules screen -->
+    <string name="rules_section_smart_title">Smart routing</string>
+    <string name="rules_section_smart_subtitle">Pick how traffic is routed through the tunnel.</string>
+    <string name="rules_mode_global">Global</string>
+    <string name="rules_mode_global_subtitle">All system traffic goes through the selected proxy.</string>
+    <string name="rules_mode_smart">Smart (Antizapret)</string>
+    <string name="rules_mode_smart_subtitle">Optional mode: proxy is active only for blocked sites. Coming soon — currently behaves as Global.</string>
+    <string name="rules_section_domains_title">Domain exclusions</string>
+    <string name="rules_section_domains_subtitle">These hosts always connect directly, bypassing the proxy.</string>
+    <string name="rules_domain_placeholder">e.g. yandex.ru</string>
+    <string name="rules_quick_add">Quick add</string>
+    <string name="rules_section_perapp_title">Per-app routing</string>
+    <string name="rules_section_perapp_subtitle">Pick which installed apps go through the VPN.</string>
+    <string name="rules_app_mode_all">All</string>
+    <string name="rules_app_mode_allow">Allow</string>
+    <string name="rules_app_mode_block">Block</string>
+    <string name="rules_app_mode_all_hint">All apps are routed through the VPN. Switch to Allow or Block to pick apps.</string>
+    <string name="rules_app_search">Search apps</string>
+    <string name="rules_app_selected_count">%1$d selected</string>
+    <string name="rules_app_system_tag">system</string>
 </resources>

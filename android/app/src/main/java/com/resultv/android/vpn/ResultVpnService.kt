@@ -11,6 +11,20 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import com.resultv.android.MainActivity
 import com.resultv.android.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.launch
+import mobile.Mobile
 import java.util.concurrent.Executors
 
 private const val TAG = "ResultV/Service"
@@ -36,10 +50,15 @@ class ResultVpnService : VpnService() {
         Thread(r, "ResultV-Box").apply { isDaemon = true }
     }
 
+    // Lifetime-scoped coroutine for live config reloads.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private var reloadWatcher: Job? = null
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
                 Log.i(TAG, "received STOP")
+                reloadWatcher?.cancel(); reloadWatcher = null
                 // Close the tun fd up front — this drops the system VPN
                 // lock icon immediately. libbox.closeService() takes a
                 // couple of seconds to drain connections, so push it to
@@ -65,6 +84,7 @@ class ResultVpnService : VpnService() {
                         BoxModule.start(this, config)
                         VpnState.set(VpnStatus.Connected)
                         renotify(buildNotification(VpnStatus.Connected))
+                        startReloadWatcher()
                     } catch (t: Throwable) {
                         Log.e(TAG, "BoxModule.start failed", t)
                         VpnState.set(VpnStatus.Error(t.message ?: t.javaClass.simpleName))
@@ -80,6 +100,7 @@ class ResultVpnService : VpnService() {
 
     override fun onRevoke() {
         Log.i(TAG, "VPN permission revoked")
+        reloadWatcher?.cancel(); reloadWatcher = null
         closeTun()
         VpnState.set(VpnStatus.Idle)
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -88,11 +109,66 @@ class ResultVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        reloadWatcher?.cancel(); reloadWatcher = null
+        scope.cancel()
         closeTun()
         VpnState.set(VpnStatus.Idle)
         worker.execute { BoxModule.stop() }
         worker.shutdown()
         super.onDestroy()
+    }
+
+    /**
+     * Watch routing-rule + per-app-routing + active-profile state and ask
+     * libbox to swap the running config in-place when anything changes.
+     * Drops the very first emission (that's the state at start time, which
+     * is already wired into the running engine).
+     *
+     * Debounce coalesces rapid edits — if the user types several domain
+     * patterns in quick succession we rebuild once, not once per keystroke.
+     */
+    @OptIn(FlowPreview::class)
+    private fun startReloadWatcher() {
+        reloadWatcher?.cancel()
+        reloadWatcher = scope.launch {
+            combine(
+                RoutingRulesRepository.state,
+                AppRoutingRepository.state,
+                ProfileRepository.state,
+            ) { rules, app, profiles -> Triple(rules, app, profiles.activeId) }
+                .distinctUntilChanged()
+                .drop(1)
+                .debounce(300)
+                .onEach { triggerReload() }
+                .launchIn(this)
+        }
+    }
+
+    private fun triggerReload() {
+        val active = ProfileRepository.state.value.active ?: return
+        val excludedDomains = RoutingRulesRepository.state.value.domainExclusions.joinToString(",")
+        val dataDir = filesDir.absolutePath
+        val configJson = try {
+            when {
+                active.entryJson.isNotBlank() ->
+                    Mobile.buildSingBoxConfigFromEntry(
+                        active.entryJson, dataDir, "8.8.8.8,1.1.1.1", excludedDomains,
+                    )
+                active.uri.isNotBlank() ->
+                    Mobile.buildSingBoxConfig(
+                        active.uri, dataDir, "8.8.8.8,1.1.1.1", excludedDomains,
+                    )
+                else -> return
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "rebuild config for reload failed", t)
+            return
+        }
+        worker.execute {
+            if (!BoxModule.reload(configJson)) {
+                Log.w(TAG, "reload skipped — no running server")
+            }
+        }
     }
 
     private fun closeTun() {
@@ -114,7 +190,7 @@ class ResultVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val ch = NotificationChannel(
                 CHANNEL_ID,
-                "VPN status",
+                getString(R.string.vpn_channel_name),
                 NotificationManager.IMPORTANCE_LOW,
             )
             nm.createNotificationChannel(ch)
@@ -130,19 +206,21 @@ class ResultVpnService : VpnService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val text = when (status) {
-            VpnStatus.Connecting -> "Connecting…"
-            VpnStatus.Connected -> "Connected"
-            VpnStatus.Idle -> "Idle"
-            is VpnStatus.Error -> "Error: ${status.message}"
+            VpnStatus.Connecting -> getString(R.string.vpn_status_connecting)
+            VpnStatus.Connected -> getString(R.string.vpn_status_connected)
+            VpnStatus.Idle -> getString(R.string.vpn_status_idle)
+            is VpnStatus.Error -> getString(R.string.vpn_status_error, status.message)
         }
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(openApp)
             .setOngoing(true)
             .addAction(
-                Notification.Action.Builder(null, "Disconnect", stopIntent).build()
+                Notification.Action.Builder(
+                    null, getString(R.string.vpn_action_disconnect), stopIntent,
+                ).build()
             )
             .build()
     }

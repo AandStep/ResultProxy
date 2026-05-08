@@ -18,9 +18,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.resultv.android.R
 import com.resultv.android.theme.Brand
 import com.resultv.android.vpn.VpnStatus
 
@@ -42,48 +44,87 @@ fun PowerButton(
     val connecting = status is VpnStatus.Connecting
     val errored = status is VpnStatus.Error
 
-    val ringColor by animateColorAsState(
-        targetValue = when {
-            connected -> Brand.GreenLight
-            connecting -> Brand.Warning
-            errored -> Brand.Danger
-            else -> Brand.SurfaceBorder
-        },
-        animationSpec = tween(350),
-        label = "ringColor",
-    )
+    // Desktop reference (HomeView.jsx, lines 197–224):
+    //
+    //   connected → bg-[#007E3A] text-zinc-950, NO border, shadow-[#007E3A]/50
+    //   connecting → from-zinc-800 to-zinc-900, border-amber-500, text-amber-400, shadow-amber-500/30
+    //   error → bg-zinc-900, border-rose-500/50, text-rose-500, shadow-rose-500/20
+    //   idle → from-zinc-800 to-zinc-900, border-zinc-800, text-zinc-400, shadow-2xl
+    //
+    // The halo is a separate blurred disc behind the button:
+    //   connected → bg-[#007E3A]/40, error → bg-rose-500/20 (pulsing), else → transparent.
+
     val fillColor by animateColorAsState(
         targetValue = when {
             connected -> Brand.Green
-            connecting -> Brand.Warning.copy(alpha = 0.85f)
-            errored -> Brand.Danger.copy(alpha = 0.85f)
-            else -> Brand.SurfaceHigh
+            errored -> Brand.Surface
+            else -> Brand.SurfaceHigh   // connecting + idle
         },
         animationSpec = tween(350),
         label = "fillColor",
     )
-    val glowColor = when {
-        connected -> Brand.Green.copy(alpha = 0.40f)
-        connecting -> Brand.Warning.copy(alpha = 0.30f)
+    // Border: connected has no visible border (collapses to fill), the rest
+    // get a 4dp ring in their state colour.
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            connected -> Brand.Green
+            connecting -> Brand.Warning
+            errored -> Brand.Danger.copy(alpha = 0.50f)
+            else -> Brand.SurfaceHigh
+        },
+        animationSpec = tween(350),
+        label = "borderColor",
+    )
+    val borderWidth = if (connected) 0.dp else 4.dp
+    val iconTint by animateColorAsState(
+        targetValue = when {
+            connected -> Color.Black.copy(alpha = 0.78f)  // text-zinc-950 over green
+            connecting -> Brand.Favorite                  // amber-400
+            errored -> Brand.Danger
+            else -> Brand.SecondaryText                   // text-zinc-400
+        },
+        animationSpec = tween(350),
+        label = "iconTint",
+    )
+    // Glow uses a radial-gradient brush (NOT a blurred opaque disc): the
+    // gradient fades smoothly to Color.Transparent so there's no visible
+    // halo edge. Matches desktop's `shadow-2xl shadow-[#007E3A]/50`, which
+    // is a feathered drop shadow without a discrete inner ring.
+    val glowCenter = when {
+        connected -> Brand.Green.copy(alpha = 0.55f)
         errored -> Brand.Danger.copy(alpha = 0.30f)
+        connecting -> Brand.Warning.copy(alpha = 0.40f)
         else -> Color.Transparent
     }
     val glowSize by animateDpAsState(
-        targetValue = if (connected || connecting || errored) 200.dp else 0.dp,
+        targetValue = if (connected || errored || connecting) 320.dp else 0.dp,
         animationSpec = tween(600),
         label = "glow",
     )
 
     Box(
-        modifier = modifier.size(220.dp),
+        modifier = modifier.size(320.dp),
         contentAlignment = Alignment.Center,
     ) {
         // Halo behind the button.
         Box(
             modifier = Modifier
                 .size(glowSize)
-                .background(glowColor, CircleShape)
-                .blur(40.dp),
+                .background(
+                    Brush.radialGradient(
+                        // Strong at the centre, fully transparent at the edge.
+                        // Stops shape the falloff curve — most of the glow
+                        // sits in the inner ~60% so the disc looks dense
+                        // near the button and dissolves into background.
+                        colorStops = arrayOf(
+                            0f to glowCenter,
+                            0.35f to glowCenter.copy(alpha = glowCenter.alpha * 0.55f),
+                            0.7f to glowCenter.copy(alpha = glowCenter.alpha * 0.15f),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+                    CircleShape,
+                ),
         )
         // Main button surface.
         Surface(
@@ -91,23 +132,27 @@ fun PowerButton(
             enabled = enabled,
             shape = CircleShape,
             color = fillColor,
-            contentColor = if (connected) Color.Black.copy(alpha = 0.78f) else Color.White,
+            contentColor = iconTint,
             modifier = Modifier
-                .size(160.dp)
-                .border(width = 4.dp, color = ringColor, shape = CircleShape),
+                .size(220.dp)
+                .then(
+                    if (borderWidth > 0.dp)
+                        Modifier.border(borderWidth, borderColor, CircleShape)
+                    else Modifier
+                ),
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = Icons.Filled.PowerSettingsNew,
                     contentDescription = if (connected) "Disconnect" else "Connect",
-                    modifier = Modifier.size(64.dp),
+                    modifier = Modifier.size(96.dp),
                 )
                 if (connecting) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(152.dp),
+                        modifier = Modifier.size(212.dp),
                         color = Brand.Warning,
                         strokeWidth = 3.dp,
-                        trackColor = Color.Transparent,
+                        trackColor = Brand.Warning.copy(alpha = 0.30f),
                     )
                 }
             }
@@ -125,15 +170,17 @@ fun StatusHeader(status: VpnStatus, activeProfileName: String?) {
         is VpnStatus.Idle -> Brand.SecondaryText
     }
     val title = when (status) {
-        is VpnStatus.Connected -> "Protected"
-        is VpnStatus.Connecting -> "Connecting…"
-        is VpnStatus.Error -> "Error"
-        is VpnStatus.Idle -> "Unprotected"
+        is VpnStatus.Connected -> stringResource(R.string.status_protected)
+        is VpnStatus.Connecting -> stringResource(R.string.status_connecting)
+        is VpnStatus.Error -> stringResource(R.string.status_error)
+        is VpnStatus.Idle -> stringResource(R.string.status_unprotected)
     }
     val subtitle = when (status) {
-        is VpnStatus.Connected -> activeProfileName?.let { "Traffic routed via $it" }
+        is VpnStatus.Connected -> activeProfileName?.let {
+            stringResource(R.string.status_traffic_routed_via, it)
+        }
         is VpnStatus.Error -> status.message
-        else -> "Your connection is not protected"
+        else -> stringResource(R.string.status_unprotected_subtitle)
     }
     androidx.compose.foundation.layout.Column(
         horizontalAlignment = Alignment.CenterHorizontally,

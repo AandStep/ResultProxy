@@ -97,7 +97,10 @@ func DecodeDeepLink(rawURL string) (string, error) {
 	}
 
 	// Some browsers / shells percent-encode the URL before passing it on.
-	if decoded, err := urlpkg.QueryUnescape(body); err == nil && decoded != "" {
+	// Use PathUnescape (not QueryUnescape) so '+' is preserved literally —
+	// QueryUnescape would translate '+' to space, corrupting standard-base64
+	// payloads.
+	if decoded, err := urlpkg.PathUnescape(body); err == nil && decoded != "" {
 		body = decoded
 	}
 

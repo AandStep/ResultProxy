@@ -87,6 +87,31 @@ object BoxModule {
         Log.i(TAG, "BoxModule started")
     }
 
+    /**
+     * Reload the running engine with a fresh config. libbox's
+     * `startOrReloadService` is idempotent — if the server is up it swaps
+     * the engine in-place (drops connections briefly, re-invokes openTun
+     * on the platform interface, applies the new route table).
+     *
+     * Returns false if no server is running, in which case the caller
+     * should fall through to a fresh `start()`.
+     */
+    @Synchronized
+    fun reload(configJson: String): Boolean {
+        val server = commandServer ?: return false
+        Log.i(TAG, "── reload config begin ──")
+        configJson.chunked(3500).forEach { Log.i(TAG, it) }
+        Log.i(TAG, "── reload config end ──")
+        try {
+            server.startOrReloadService(configJson, OverrideOptions())
+            Log.i(TAG, "BoxModule reloaded")
+            return true
+        } catch (t: Throwable) {
+            Log.e(TAG, "reload failed", t)
+            return false
+        }
+    }
+
     @Synchronized
     fun stop() {
         val server = commandServer ?: return

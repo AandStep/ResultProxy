@@ -27,9 +27,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.resultv.android.R
 import com.resultv.android.theme.Brand
 import com.resultv.android.ui.components.ServerRow
 import com.resultv.android.vpn.Profile
@@ -47,7 +49,7 @@ fun ProxiesScreen(onAddPressed: () -> Unit) {
         }
 
         Text(
-            text = "${state.profiles.size} profiles",
+            text = stringResource(R.string.proxies_count, state.profiles.size),
             style = MaterialTheme.typography.labelLarge,
             color = Brand.SecondaryText,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -66,6 +68,7 @@ fun ProxiesScreen(onAddPressed: () -> Unit) {
                     isActive = p.id == state.activeId,
                     isFavorite = false,
                     onClick = { ProfileRepository.setActive(p.id) },
+                    latencyMs = mockLatencyMs(p.id),
                     trailing = {
                         IconButton(
                             onClick = { pendingDelete = p },
@@ -73,7 +76,7 @@ fun ProxiesScreen(onAddPressed: () -> Unit) {
                         ) {
                             Icon(
                                 imageVector = Icons.Outlined.DeleteOutline,
-                                contentDescription = "Delete profile",
+                                contentDescription = stringResource(R.string.proxies_delete_cd),
                                 tint = Brand.MutedText,
                             )
                         }
@@ -87,16 +90,16 @@ fun ProxiesScreen(onAddPressed: () -> Unit) {
     if (target != null) {
         AlertDialog(
             onDismissRequest = { pendingDelete = null },
-            title = { Text("Delete profile?") },
-            text = { Text("\"${target.name}\" will be removed.", color = Brand.SecondaryText) },
+            title = { Text(stringResource(R.string.proxies_delete_title)) },
+            text = { Text(stringResource(R.string.proxies_delete_message, target.name), color = Brand.SecondaryText) },
             confirmButton = {
                 TextButton(onClick = {
                     ProfileRepository.remove(target.id)
                     pendingDelete = null
-                }) { Text("Delete", color = Brand.Danger) }
+                }) { Text(stringResource(R.string.action_delete), color = Brand.Danger) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
@@ -110,12 +113,12 @@ private fun EmptyState(onAddPressed: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                "No profiles yet",
+                stringResource(R.string.proxies_empty_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
-                "Paste a share link or import a subscription URL to get started.",
+                stringResource(R.string.proxies_empty_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Brand.SecondaryText,
             )
@@ -123,7 +126,7 @@ private fun EmptyState(onAddPressed: () -> Unit) {
             FilledTonalButton(onClick = onAddPressed) {
                 Icon(Icons.Outlined.Add, contentDescription = null)
                 Spacer(Modifier.fillMaxWidth(0.05f))
-                Text("Add server")
+                Text(stringResource(R.string.home_add_server))
             }
         }
     }

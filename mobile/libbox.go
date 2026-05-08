@@ -238,12 +238,17 @@ func normalizeSubscriptionURL(subURL string) string {
 //
 // dnsServers is a comma-separated list ("8.8.8.8,1.1.1.1"); pass "" for
 // built-in defaults.
-func BuildSingBoxConfig(uri string, dataDir string, dnsServers string) (string, error) {
+//
+// excludedDomains is a comma-separated list of host patterns that should
+// bypass the proxy (route via `direct`). Patterns starting with `*.`
+// become domain_suffix matches (`*.ru` → `.ru`); bare hostnames
+// (`yandex.ru`) become exact domain matches. Pass "" for none.
+func BuildSingBoxConfig(uri string, dataDir string, dnsServers string, excludedDomains string) (string, error) {
 	entry, err := proxy.ParseProxyURI(uri)
 	if err != nil {
 		return "", fmt.Errorf("parsing URI: %w", err)
 	}
-	return buildSingBoxConfigFromEntry(entry, dataDir, dnsServers)
+	return buildSingBoxConfigFromEntry(entry, dataDir, dnsServers, excludedDomains)
 }
 
 // BuildSingBoxConfigFromEntry is the entry-based counterpart used by
@@ -254,7 +259,9 @@ func BuildSingBoxConfig(uri string, dataDir string, dnsServers string) (string, 
 // AUTO envelopes (Type=="AUTO" with Extra.members) are unwrapped to the
 // first member; sing-box can't multiplex these natively in our PoC
 // pipeline, and a latency-driven probe will live in Connect later.
-func BuildSingBoxConfigFromEntry(entryJson, dataDir, dnsServers string) (string, error) {
+//
+// See BuildSingBoxConfig for excludedDomains semantics.
+func BuildSingBoxConfigFromEntry(entryJson, dataDir, dnsServers, excludedDomains string) (string, error) {
 	var entry config.ProxyEntry
 	if err := json.Unmarshal([]byte(entryJson), &entry); err != nil {
 		return "", fmt.Errorf("parsing entry JSON: %w", err)
@@ -269,7 +276,34 @@ func BuildSingBoxConfigFromEntry(entryJson, dataDir, dnsServers string) (string,
 		}
 		entry = members[0]
 	}
-	return buildSingBoxConfigFromEntry(entry, dataDir, dnsServers)
+	return buildSingBoxConfigFromEntry(entry, dataDir, dnsServers, excludedDomains)
+}
+
+// splitDomainPatterns parses a comma-separated list of host patterns into
+// sing-box `domain` (exact) and `domain_suffix` (substring suffix) buckets.
+//
+//	"*.ru, yandex.ru, *.рф" → exact=[yandex.ru]  suffix=[.ru .рф]
+//
+// `*.foo` strips the asterisk and keeps the leading dot so it matches only
+// subdomains of foo, not the bare TLD label inside unrelated hostnames.
+// Whitespace and empty entries are tolerated; duplicates are kept (sing-box
+// dedups internally when matching).
+func splitDomainPatterns(csv string) (exact []string, suffix []string) {
+	for _, raw := range strings.Split(csv, ",") {
+		p := strings.ToLower(strings.TrimSpace(raw))
+		if p == "" {
+			continue
+		}
+		switch {
+		case strings.HasPrefix(p, "*."):
+			suffix = append(suffix, strings.TrimPrefix(p, "*"))
+		case strings.HasPrefix(p, "."):
+			suffix = append(suffix, p)
+		default:
+			exact = append(exact, p)
+		}
+	}
+	return exact, suffix
 }
 
 func decodeAutoMembers(extra json.RawMessage) ([]config.ProxyEntry, error) {
@@ -285,7 +319,7 @@ func decodeAutoMembers(extra json.RawMessage) ([]config.ProxyEntry, error) {
 	return wrap.Members, nil
 }
 
-func buildSingBoxConfigFromEntry(entry config.ProxyEntry, dataDir, dnsServers string) (string, error) {
+func buildSingBoxConfigFromEntry(entry config.ProxyEntry, dataDir, dnsServers, excludedDomains string) (string, error) {
 	if dataDir == "" {
 		return "", fmt.Errorf("dataDir is required on mobile (pass context.filesDir)")
 	}
@@ -348,6 +382,22 @@ func buildSingBoxConfigFromEntry(entry config.ProxyEntry, dataDir, dnsServers st
 		// underlying interface via our CreateDefaultInterfaceMonitor and
 		// per-socket `protect(fd)` automatically; we must NOT set the flag.
 		sb.Route.AutoDetect = false
+
+		// Domain exclusions: route matching hosts to `direct`, bypassing
+		// the proxy. MUST be appended AFTER the `sniff` action rule —
+		// sing-box only knows the destination IP at TUN ingress; the
+		// domain is populated from TLS SNI / HTTP Host once `sniff` runs,
+		// after which `domain` / `domain_suffix` matchers can fire.
+		// Putting this rule before sniff means it never matches.
+		if exact, suffix := splitDomainPatterns(excludedDomains); len(exact)+len(suffix) > 0 {
+			rule := proxy.SBRouteRule{
+				Domain:       exact,
+				DomainSuffix: suffix,
+				Outbound:     "direct",
+				Action:       "route",
+			}
+			sb.Route.Rules = append(sb.Route.Rules, rule)
+		}
 	}
 
 	// `type: local` resolves through the system resolver, which on Android

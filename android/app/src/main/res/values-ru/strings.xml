@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ResultV</string>
+
+    <string name="tab_home">Главная</string>
+    <string name="tab_proxies">Серверы</string>
+    <string name="tab_add">Добавить</string>
+    <string name="tab_rules">Правила</string>
+    <string name="tab_settings">Настройки</string>
+
+    <string name="action_add">Добавить</string>
+    <string name="action_clear">Очистить</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_save">Сохранить</string>
+    <string name="action_back">Назад</string>
+    <string name="action_remove">Убрать</string>
+
+    <string name="home_current_server">ТЕКУЩИЙ СЕРВЕР</string>
+    <string name="home_no_profile_selected">Профиль не выбран</string>
+    <string name="home_no_profiles_yet">Нет профилей — добавьте, чтобы начать.</string>
+    <string name="home_view_all_profiles">Показать все %1$d профилей</string>
+    <string name="home_add_server">Добавить сервер</string>
+    <string name="home_add_server_subtitle">Вставьте ссылку или URL подписки</string>
+    <string name="home_stat_download">ЗАГРУЗКА</string>
+    <string name="home_stat_upload">ОТДАЧА</string>
+    <string name="action_collapse">Свернуть</string>
+    <string name="action_expand">Развернуть</string>
+    <string name="action_favorite">В избранное</string>
+    <string name="action_unfavorite">Убрать из избранного</string>
+
+    <string name="status_protected">Защищено</string>
+    <string name="status_unprotected">Не защищено</string>
+    <string name="status_connecting">Подключение…</string>
+    <string name="status_error">Ошибка</string>
+    <string name="status_traffic_routed_via">Трафик через %1$s</string>
+    <string name="status_unprotected_subtitle">Соединение не защищено</string>
+
+    <string name="settings_section_general">ОБЩИЕ</string>
+    <string name="settings_section_dns">DNS-СЕРВЕРЫ</string>
+    <string name="settings_section_about">О ПРИЛОЖЕНИИ</string>
+    <string name="settings_kill_switch">Kill Switch</string>
+    <string name="settings_kill_switch_subtitle">Блокировать интернет при обрыве VPN (скоро)</string>
+    <string name="settings_adblock">Блокировка рекламы</string>
+    <string name="settings_adblock_subtitle">Блокировать рекламу через DNS (скоро)</string>
+    <string name="settings_ipv6">IPv6</string>
+    <string name="settings_ipv6_subtitle">Сейчас маршрутизация только по IPv4</string>
+    <string name="settings_dns_hint">Выберите пресет или укажите свои серверы (через запятую).</string>
+    <string name="settings_dns_custom_placeholder">Свой: 1.1.1.1, 8.8.8.8</string>
+    <string name="settings_about_subtitle">Мобильная превью-сборка · Phase 5+</string>
+    <string name="settings_dns_preset_auto">Авто</string>
+    <string name="settings_dns_preset_custom">Свой</string>
+
+    <string name="vpn_status_connecting">Подключение…</string>
+    <string name="vpn_status_connected">Подключено</string>
+    <string name="vpn_status_idle">Не активен</string>
+    <string name="vpn_status_error">Ошибка: %1$s</string>
+    <string name="vpn_action_disconnect">Отключить</string>
+    <string name="vpn_channel_name">Статус VPN</string>
+
+    <!-- Add screen -->
+    <string name="add_quick_clipboard_title">Из буфера</string>
+    <string name="add_quick_clipboard_subtitle">Вставить ссылки из буфера</string>
+    <string name="add_quick_file_title">Из файла</string>
+    <string name="add_quick_file_subtitle">Открыть .txt со ссылками</string>
+    <string name="add_msg_file_empty">Файл пуст или не читается</string>
+    <string name="add_msg_imported_file">Импортировано: %1$d</string>
+    <string name="add_msg_no_valid_uris_file">В файле нет корректных ссылок</string>
+    <string name="add_msg_clipboard_empty">Буфер обмена пуст</string>
+    <string name="add_msg_imported_clipboard">Импортировано из буфера: %1$d</string>
+    <string name="add_msg_no_valid_uris_clipboard">В буфере нет корректных ссылок</string>
+    <string name="add_mode_paste">Ссылка</string>
+    <string name="add_mode_manual">Вручную</string>
+    <string name="add_mode_subscription">Подписка</string>
+
+    <string name="add_paste_label">Share-ссылка</string>
+    <string name="add_paste_placeholder">vless:// vmess:// trojan:// hy2:// …</string>
+    <string name="add_paste_err_empty">Ссылка пустая</string>
+    <string name="add_paste_err_invalid">Некорректная ссылка</string>
+    <string name="add_paste_default_name">Профиль</string>
+
+    <string name="add_sub_label">URL подписки</string>
+    <string name="add_sub_placeholder">https://example.com/sub/…</string>
+    <string name="add_sub_fetch">Получить</string>
+    <string name="add_sub_fetching">Загрузка…</string>
+    <string name="add_sub_selected">Выбрано %1$d из %2$d</string>
+    <string name="add_sub_import">Импорт %1$d</string>
+
+    <!-- Manual entry -->
+    <string name="manual_choose_protocol">Выберите протокол</string>
+    <string name="manual_err_required">Поле «%1$s» обязательно</string>
+    <string name="manual_err_build">Не удалось собрать ссылку</string>
+    <string name="manual_err_invalid">Некорректная конфигурация</string>
+    <string name="manual_choice_none">(нет)</string>
+
+    <string name="manual_field_name">Имя</string>
+    <string name="manual_field_name_placeholder">Мой сервер</string>
+    <string name="manual_field_host">Хост</string>
+    <string name="manual_field_host_placeholder">example.com</string>
+    <string name="manual_field_port">Порт</string>
+    <string name="manual_field_uuid">UUID</string>
+    <string name="manual_field_network">Транспорт</string>
+    <string name="manual_field_security">Шифрование</string>
+    <string name="manual_field_flow">Flow</string>
+    <string name="manual_field_sni">SNI</string>
+    <string name="manual_field_fingerprint">Fingerprint</string>
+    <string name="manual_field_pbk">Reality public key</string>
+    <string name="manual_field_sid">Reality short ID</string>
+    <string name="manual_field_path">Путь / serviceName</string>
+    <string name="manual_field_host_header">Host-заголовок</string>
+    <string name="manual_field_alpn">ALPN</string>
+    <string name="manual_field_alpn_placeholder">h2,http/1.1</string>
+    <string name="manual_field_alterid">AlterID</string>
+    <string name="manual_field_tls">TLS</string>
+    <string name="manual_field_password">Пароль</string>
+    <string name="manual_field_method">Шифр</string>
+    <string name="manual_field_allow_insecure">Разрешить insecure</string>
+    <string name="manual_field_obfuscation">Обфускация</string>
+    <string name="manual_field_obfs_password">Пароль обфускации</string>
+    <string name="manual_field_private_key">Приватный ключ</string>
+    <string name="manual_field_peer_public_key">Публичный ключ пира</string>
+    <string name="manual_field_address">Адрес интерфейса</string>
+    <string name="manual_field_address_placeholder">10.0.0.2/32, fd00::2/128</string>
+    <string name="manual_field_allowed_ips">Разрешённые IP</string>
+    <string name="manual_field_psk">Pre-shared key</string>
+    <string name="manual_field_mtu">MTU</string>
+
+    <!-- Proxies screen -->
+    <string name="proxies_count">Профилей: %1$d</string>
+    <string name="proxies_delete_cd">Удалить профиль</string>
+    <string name="proxies_delete_title">Удалить профиль?</string>
+    <string name="proxies_delete_message">«%1$s» будет удалён.</string>
+    <string name="proxies_empty_title">Профилей пока нет</string>
+    <string name="proxies_empty_subtitle">Вставьте share-ссылку или URL подписки, чтобы начать.</string>
+
+    <!-- Rules screen -->
+    <string name="rules_section_smart_title">Маршрутизация</string>
+    <string name="rules_section_smart_subtitle">Выберите, как направлять трафик через туннель.</string>
+    <string name="rules_mode_global">Глобальный</string>
+    <string name="rules_mode_global_subtitle">Весь трафик системы идёт через выбранный прокси.</string>
+    <string name="rules_mode_smart">Smart (Antizapret)</string>
+    <string name="rules_mode_smart_subtitle">Опциональный режим: прокси активен только для заблокированных сайтов. Скоро — пока работает как Глобальный.</string>
+    <string name="rules_section_domains_title">Исключения по доменам</string>
+    <string name="rules_section_domains_subtitle">Эти хосты всегда идут напрямую, в обход прокси.</string>
+    <string name="rules_domain_placeholder">например, yandex.ru</string>
+    <string name="rules_quick_add">Быстрое добавление</string>
+    <string name="rules_section_perapp_title">Маршрутизация по приложениям</string>
+    <string name="rules_section_perapp_subtitle">Выберите, какие приложения идут через VPN.</string>
+    <string name="rules_app_mode_all">Все</string>
+    <string name="rules_app_mode_allow">Разрешить</string>
+    <string name="rules_app_mode_block">Запретить</string>
+    <string name="rules_app_mode_all_hint">Все приложения идут через VPN. Переключитесь на «Разрешить» или «Запретить», чтобы выбрать список.</string>
+    <string name="rules_app_search">Поиск приложений</string>
+    <string name="rules_app_selected_count">Выбрано: %1$d</string>
+    <string name="rules_app_system_tag">система</string>
+</resources>
