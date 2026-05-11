@@ -51,3 +51,6 @@ build/windows/installer/tmp/*
 tools/encrypt-sub/
 build-release.bat
 build-release.sh
+
+# build
+build/bin/
