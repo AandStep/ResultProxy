@@ -15,58 +15,15 @@
 
 package system
 
-import (
-	"fmt"
-	"strconv"
-	"strings"
-)
-
-
+// TrafficStats reports cumulative interface counters in bytes. The numbers come
+// from the OS — implementations live in system_windows.go / system_unix.go.
 type TrafficStats struct {
-	Received int64 `json:"received"` 
-	Sent     int64 `json:"sent"`     
+	Received int64 `json:"received"`
+	Sent     int64 `json:"sent"`
 }
 
-
-
-func GetNetworkTraffic() TrafficStats {
-	out, err := command("netstat", "-e").Output()
-	if err != nil {
-		return TrafficStats{}
-	}
-
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		parts := strings.Fields(strings.TrimSpace(line))
-		if len(parts) >= 3 {
-			received, err1 := strconv.ParseInt(parts[len(parts)-2], 10, 64)
-			sent, err2 := strconv.ParseInt(parts[len(parts)-1], 10, 64)
-			if err1 == nil && err2 == nil && received > 0 {
-				return TrafficStats{Received: received, Sent: sent}
-			}
-		}
-	}
-
-	return TrafficStats{}
-}
-
-
-func IsAdmin() bool {
-	
-	err := command("net", "session").Run()
-	return err == nil
-}
-
-
-func RestartAsAdmin(exePath string, args ...string) error {
-	
-	psArgs := fmt.Sprintf(`Start-Process -FilePath '%s' -Verb RunAs`, exePath)
-	if len(args) > 0 {
-		psArgs += fmt.Sprintf(` -ArgumentList '%s'`, strings.Join(args, " "))
-	}
-	return command("powershell", "-Command", psArgs).Start()
-}
-
+// ArgsStartInTray reports whether the process was launched in tray-only mode.
+// Cross-platform: parsed from os.Args by main, no syscalls.
 func ArgsStartInTray(args []string) bool {
 	for _, a := range args[1:] {
 		if a == "--autostart" || a == "--tray" {

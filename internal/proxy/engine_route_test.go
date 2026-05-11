@@ -434,3 +434,66 @@ func TestBuildProxyModeConfig_NoDNSRulesInProxyMode(t *testing.T) {
 		t.Fatalf("expected no dns rules in proxy mode, got rules=%+v", cfg.DNS.Rules)
 	}
 }
+
+// TestBuildProxyModeConfig_AppWhitelistEnablesFindProcess verifies that when
+// the user has app exclusions, the proxy-mode config tells sing-box to
+// resolve PID/process for every connection. Without find_process the
+// process_path_regex rules wouldn't fire and excluded apps would still
+// route through the proxy.
+func TestBuildProxyModeConfig_AppWhitelistEnablesFindProcess(t *testing.T) {
+	cfg := BuildProxyModeConfig(EngineConfig{
+		Mode:         ProxyModeProxy,
+		ListenAddr:   "127.0.0.1:14081",
+		Proxy:        ProxyConfig{Type: "TROJAN", IP: "1.2.3.4", Port: 443, Password: "p"},
+		AppWhitelist: []string{"steam.exe", "steamwebhelper.exe"},
+	})
+	if cfg.Route == nil {
+		t.Fatal("route missing")
+	}
+	if !cfg.Route.FindProcess {
+		t.Fatal("expected find_process=true when app whitelist is set, got false")
+	}
+}
+
+func TestBuildProxyModeConfig_NoAppWhitelistOmitsFindProcess(t *testing.T) {
+	cfg := BuildProxyModeConfig(EngineConfig{
+		Mode:       ProxyModeProxy,
+		ListenAddr: "127.0.0.1:14081",
+		Proxy:      ProxyConfig{Type: "TROJAN", IP: "1.2.3.4", Port: 443, Password: "p"},
+	})
+	if cfg.Route == nil {
+		t.Fatal("route missing")
+	}
+	if cfg.Route.FindProcess {
+		t.Fatal("expected find_process=false when whitelist empty, got true")
+	}
+}
+
+// TestBuildRoute_ProxyMode_AppWhitelistGetsDirectRule covers the actual
+// excluded-process rule. In proxy mode the mixed inbound terminates the
+// connection locally; sing-box looks up the originating PID and matches
+// against process_path_regex. The rule must point at the direct outbound
+// so the excluded app bypasses the tunnel.
+func TestBuildRoute_ProxyMode_AppWhitelistGetsDirectRule(t *testing.T) {
+	cfg := EngineConfig{
+		Mode:         ProxyModeProxy,
+		AppWhitelist: []string{"steam.exe", "steamwebhelper.exe"},
+	}
+	route := buildRoute(cfg)
+	if route == nil {
+		t.Fatal("route missing")
+	}
+	var found bool
+	for _, r := range route.Rules {
+		if r.Outbound != "direct" || len(r.ProcessPathRegex) == 0 {
+			continue
+		}
+		if len(r.ProcessPathRegex) >= 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected process_path_regex direct rule with both entries, rules=%+v", route.Rules)
+	}
+}

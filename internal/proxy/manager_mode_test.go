@@ -26,10 +26,12 @@ import (
 )
 
 type stubEngine struct {
-	startErr   error
-	startCalls []EngineConfig
-	stopCalls  int
-	running    bool
+	startErr     error
+	startCalls   []EngineConfig
+	stopCalls    int
+	running      bool
+	applyCalls   [][]string
+	applyErr     error
 }
 
 func (s *stubEngine) Start(_ context.Context, cfg EngineConfig) error {
@@ -50,6 +52,11 @@ func (s *stubEngine) Stop() error {
 func (s *stubEngine) IsRunning() bool { return s.running }
 func (s *stubEngine) GetTrafficStats() (up, down int64) {
 	return 0, 0
+}
+
+func (s *stubEngine) ApplyAppWhitelist(paths []string) error {
+	s.applyCalls = append(s.applyCalls, append([]string(nil), paths...))
+	return s.applyErr
 }
 
 type stubSystemProxy struct {

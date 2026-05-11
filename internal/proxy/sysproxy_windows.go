@@ -102,18 +102,28 @@ func (w *WindowsSystemProxy) Disable() error {
 	}
 	defer key.Close()
 
-	
+
 	if err := key.SetDWordValue("ProxyEnable", 0); err != nil {
 		return fmt.Errorf("disabling ProxyEnable: %w", err)
 	}
 
-	
+
 	_ = key.DeleteValue("ProxyServer")
 	_ = key.DeleteValue("ProxyOverride")
 	_ = key.DeleteValue("AutoConfigURL")
 
-	
+
 	_ = hiddenCommand("ipconfig", "/flushdns").Run()
+
+	// Steam, .NET clients and other WinHTTP-based apps cache the system proxy
+	// at process startup via WinHttpGetIEProxyConfigForCurrentUser. Clearing
+	// the registry above doesn't propagate to them — they keep dialing
+	// 127.0.0.1:14081 (now closed) and hang. `netsh winhttp reset proxy`
+	// flushes the WinHTTP service-side cache so Steam et al. reconnect to
+	// direct on their next request without needing a restart. Best-effort:
+	// the command requires admin and we run unprivileged in proxy mode, so
+	// we just swallow the error.
+	_ = hiddenCommand("netsh", "winhttp", "reset", "proxy").Run()
 
 	return nil
 }

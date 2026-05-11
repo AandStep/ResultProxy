@@ -73,6 +73,11 @@ type Engine interface {
 	IsRunning() bool
 
 	GetTrafficStats() (up, down int64)
+
+	// ApplyAppWhitelist swaps the active per-app exclusion list without
+	// disconnecting. No-op when not running. Implementations may briefly
+	// interrupt traffic while rebuilding the routing config.
+	ApplyAppWhitelist(paths []string) error
 }
 
 type SingBoxConfig struct {
@@ -268,9 +273,10 @@ type SBOutboundTransport struct {
 }
 
 type SBRoute struct {
-	Rules      []SBRouteRule `json:"rules,omitempty"`
-	Final      string        `json:"final,omitempty"`
-	AutoDetect bool          `json:"auto_detect_interface,omitempty"`
+	Rules       []SBRouteRule `json:"rules,omitempty"`
+	Final       string        `json:"final,omitempty"`
+	AutoDetect  bool          `json:"auto_detect_interface,omitempty"`
+	FindProcess bool          `json:"find_process,omitempty"`
 }
 
 type SBRouteRule struct {
@@ -357,23 +363,15 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 		tunIPv4 = cfg.TunIPv4
 	}
 	tunAddresses := []string{tunIPv4}
-	tunStack := "gvisor"
-	strictRoute := true
+	// system stack uses the kernel-level WinTun driver. EAC, BattlEye and other
+	// anti-cheats inspect network adapters at boot — gvisor's userspace stack
+	// looks foreign to them and refuses to instantiate (DBD "EAC client cannot
+	// be instantiated"). system stack is transparent to anti-cheat. WG/AWG
+	// always required system stack; others now follow suit.
+	tunStack := "system"
+	strictRoute := false
 
 	pt := strings.ToUpper(strings.TrimSpace(cfg.Proxy.Type))
-
-	if pt == "WIREGUARD" || pt == "AMNEZIAWG" {
-		tunStack = "system"
-		strictRoute = false
-	}
-
-	if pt == "HYSTERIA2" || pt == "TROJAN" || pt == "SS" || pt == "SHADOWSOCKS" {
-		strictRoute = false
-	}
-
-	if pt == "WIREGUARD" || pt == "AMNEZIAWG" {
-		tunAddresses = []string{tunIPv4}
-	}
 
 	var routeExclude []string
 	if pt != "WIREGUARD" && pt != "AMNEZIAWG" {
@@ -551,6 +549,12 @@ func buildRoute(cfg EngineConfig) *SBRoute {
 	route := &SBRoute{
 		Final:      "proxy",
 		AutoDetect: true,
+		// Enable process matching whenever the user has supplied an app
+		// whitelist. sing-box auto-detects this from process_* rules but
+		// being explicit avoids subtle gotchas where rule reordering or
+		// rule pruning leaves no process_* rule in proxy-mode and matching
+		// silently turns off mid-session.
+		FindProcess: len(cfg.AppWhitelist) > 0,
 	}
 
 	var rules []SBRouteRule

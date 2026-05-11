@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	github.com/getlantern/systray v1.2.2
 	github.com/google/uuid v1.6.0
+	github.com/mitchellh/go-ps v1.0.0
 	github.com/sagernet/sing v0.8.9
 	github.com/sagernet/sing-box v1.13.11
 	github.com/wailsapp/wails/v2 v2.12.0
@@ -113,7 +114,6 @@ require (
 	github.com/metacubex/utls v1.8.4 // indirect
 	github.com/mholt/acmez/v3 v3.1.6 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
-	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
