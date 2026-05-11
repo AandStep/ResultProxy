@@ -53,3 +53,6 @@ build/windows/libcronet.dll
 tools/encrypt-sub/
 build-release.bat
 build-release.sh
+
+# build
+build/bin/

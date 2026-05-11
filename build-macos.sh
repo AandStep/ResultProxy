@@ -16,6 +16,15 @@ OUT_DIR="build/bin"
 APP_NAME="ResultV.app"
 APP_PATH="${OUT_DIR}/${APP_NAME}"
 
+# Auto-load local .env when the key is not already provided.
+if [ -z "${SUBSCRIPTION_ENCRYPT_KEY:-}" ] && [ -f ".env" ]; then
+  echo "==> loading env from .env"
+  set -a
+  # shellcheck disable=SC1091
+  source ".env"
+  set +a
+fi
+
 LDFLAGS=""
 if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
   LDFLAGS="-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=${SUBSCRIPTION_ENCRYPT_KEY}"
