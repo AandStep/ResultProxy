@@ -325,7 +325,16 @@ func appWhitelistPathRegexes(names []string) []string {
 		}
 		seen[key] = struct{}{}
 		esc := regexp.QuoteMeta(n)
+		// Primary: match the binary basename at the end of any process path.
+		// Covers the main application process (e.g. "Safari").
 		out = append(out, `(?i)(^|[\\/])`+esc+`$`)
+		// Secondary (macOS bundle): match any process whose path passes
+		// through an <AppName>.app bundle directory. This catches XPC and
+		// framework sub-processes (e.g. com.apple.WebKit.Networking inside
+		// Safari.app) that make the actual network connections on behalf of
+		// the user-facing app. Harmless on Windows/Linux where process paths
+		// never contain ".app/" directory segments.
+		out = append(out, `(?i)[\\/]`+esc+`\.app[\\/]`)
 	}
 	return out
 }
@@ -343,8 +352,16 @@ func BuildProxyModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	if err != nil {
 		return SingBoxConfig{}, err
 	}
+	// Enable INFO-level sing-box logs when app whitelist is active so that
+	// process-matching diagnostics ("found process path: ...") are visible.
+	logLevel := "error"
+	logDisabled := true
+	if len(cfg.AppWhitelist) > 0 {
+		logLevel = "info"
+		logDisabled = false
+	}
 	config := SingBoxConfig{
-		Log:       &SBLog{Level: "error", Disabled: true},
+		Log:       &SBLog{Level: logLevel, Disabled: logDisabled},
 		DNS:       buildDNS(cfg),
 		Endpoints: endpoints,
 		Inbounds: []SBInbound{{
@@ -395,8 +412,13 @@ func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	if err != nil {
 		return SingBoxConfig{}, err
 	}
+	// Enable INFO-level logs when app whitelist is active.
+	tunLogLevel := "error"
+	if len(cfg.AppWhitelist) > 0 {
+		tunLogLevel = "info"
+	}
 	config := SingBoxConfig{
-		Log:       &SBLog{Level: "error", Disabled: false},
+		Log:       &SBLog{Level: tunLogLevel, Disabled: false},
 		DNS:       buildDNS(cfg),
 		Endpoints: endpoints,
 		Inbounds: []SBInbound{{

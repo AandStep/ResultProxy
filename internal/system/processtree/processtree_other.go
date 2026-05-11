@@ -10,7 +10,7 @@
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 // GNU General Public License for more details.
 
-//go:build !windows && !linux
+//go:build !windows && !linux && !darwin
 
 package processtree
 

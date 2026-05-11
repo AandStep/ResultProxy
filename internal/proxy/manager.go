@@ -172,8 +172,16 @@ func (m *Manager) effectiveAppWhitelist(userRoots []string) []string {
 	if len(userRoots) == 0 {
 		return nil
 	}
-	snap := processtree.Scan(userRoots)
-	return mergeAppWhitelist(userRoots, snap.Descendants)
+	// Normalize entries so that macOS .app bundle names (e.g. "safari.app")
+	// are resolved to the actual binary basename that appears in process paths
+	// (e.g. "Safari"). Without this the engine regex never matches because
+	// macOS process paths end in the CFBundleExecutable name, not the bundle.
+	normalized := sys.NormalizeAppList(userRoots)
+	if len(normalized) == 0 {
+		return nil
+	}
+	snap := processtree.Scan(normalized)
+	return mergeAppWhitelist(normalized, snap.Descendants)
 }
 
 // mergeAppWhitelist returns user roots followed by any descendants that
@@ -386,6 +394,10 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 	// whitelist. Without this we'd start the engine, then immediately hot-
 	// reload as soon as the tracker's first scan discovers existing children.
 	effectiveAppWhitelist := m.effectiveAppWhitelist(appWhitelist)
+	if len(effectiveAppWhitelist) > 0 {
+		m.log.Info(fmt.Sprintf("[APP WL] Эффективный whitelist приложений: %v", effectiveAppWhitelist))
+		m.log.Info(fmt.Sprintf("[APP WL] Регулярки process_path_regex: %v", appWhitelistPathRegexes(effectiveAppWhitelist)))
+	}
 
 	engineCfg := EngineConfig{
 		Proxy:        proxy,

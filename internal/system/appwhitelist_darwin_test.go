@@ -58,3 +58,37 @@ func TestNormalizeAppEntryDarwinNonBundle(t *testing.T) {
 		t.Errorf("normalizeAppEntry(/usr/bin/curl) = %q, want %q", got, "curl")
 	}
 }
+
+func TestSearchInstalledAppFromFakeDir(t *testing.T) {
+	// Build a fake Applications directory with "Google Chrome.app".
+	tmp := t.TempDir()
+	bundle := filepath.Join(tmp, "Google Chrome.app")
+	if err := os.MkdirAll(filepath.Join(bundle, "Contents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>Google Chrome</string>
+</dict>
+</plist>`
+	if err := os.WriteFile(filepath.Join(bundle, "Contents", "Info.plist"), []byte(plist), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := searchInstalledAppInDir("chrome", tmp)
+	if got != "Google Chrome" {
+		t.Errorf("searchInstalledAppInDir(%q) = %q, want %q", "chrome", got, "Google Chrome")
+	}
+
+	// Exact match also works.
+	if got2 := searchInstalledAppInDir("Google Chrome", tmp); got2 != "Google Chrome" {
+		t.Errorf("searchInstalledAppInDir(%q) = %q, want %q", "Google Chrome", got2, "Google Chrome")
+	}
+
+	// Unknown name returns empty string.
+	if got3 := searchInstalledAppInDir("zzz_unknown", tmp); got3 != "" {
+		t.Errorf("searchInstalledAppInDir(unknown) = %q, want empty", got3)
+	}
+}

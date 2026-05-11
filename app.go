@@ -683,6 +683,10 @@ func (a *App) UpdateRules(rules config.RoutingRules) error {
 	if a.config == nil {
 		return fmt.Errorf("config manager not initialized")
 	}
+	// Normalize app whitelist entries before saving so that the config always
+	// stores canonical binary basenames (e.g. "Safari" not "safari.app").
+	// This also deduplicates entries that differ only by .app suffix or case.
+	rules.AppWhitelist = system.NormalizeAppList(rules.AppWhitelist)
 	if err := a.config.UpdateRoutingRules(rules); err != nil {
 		return err
 	}

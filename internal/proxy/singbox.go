@@ -102,7 +102,9 @@ type singBoxLogWriter struct {
 var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 func (w *singBoxLogWriter) WriteMessage(level sblog.Level, message string) {
-	if level > sblog.LevelWarn {
+	// Pass through up to Info level (Panic=0, Error=1, Warn=2, Info=3).
+	// Debug/Trace are too verbose for production.
+	if level > sblog.LevelInfo {
 		return
 	}
 
@@ -128,6 +130,9 @@ func (w *singBoxLogWriter) WriteMessage(level sblog.Level, message string) {
 		w.log.Error(msg)
 	} else if level == sblog.LevelWarn {
 		w.log.Warning(msg)
+	} else {
+		// Info level — show as info so process-matching diagnostics are visible.
+		w.log.Info(msg)
 	}
 }
 

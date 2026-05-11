@@ -51,9 +51,14 @@ export const RulesView = () => {
 
   const addApp = () => {
     if (newApp) {
-      let appName = newApp.toLowerCase().trim();
-      if (isWin && !appName.endsWith(".exe")) appName += ".exe";
-      if (!isWin && !appName.includes(".")) appName += ".app";
+      let appName = newApp.trim();
+      if (isWin) {
+        appName = appName.toLowerCase();
+        if (!appName.endsWith(".exe")) appName += ".exe";
+      }
+      // On macOS the backend normalizes .app bundle names to the real binary
+      // basename, so we store the input as-is (lowercased for consistency).
+      if (!isWin) appName = appName.toLowerCase();
 
       const currentList = rules.appWhitelist || [];
       if (!currentList.includes(appName)) {
@@ -75,7 +80,7 @@ export const RulesView = () => {
     if (file) {
       let appName = file.name.toLowerCase();
       if (isWin && !appName.endsWith(".exe")) appName += ".exe";
-      if (!isWin && !appName.includes(".")) appName += ".app";
+      // On macOS the backend normalizes .app names, so no suffix appending needed.
       const currentList = rules.appWhitelist || [];
       if (!currentList.includes(appName)) {
         setRules({ ...rules, appWhitelist: [...currentList, appName] });
@@ -100,11 +105,11 @@ export const RulesView = () => {
 
   const popularTlds = ["*.ru", "*.рф", "*.su", "*.by", "*.kz"];
   const appExt = isWin ? ".exe" : ".app";
-  const appPlaceholder = isWin ? "steam.exe" : "safari.app";
+  const appPlaceholder = isWin ? "steam.exe" : "Safari";
 
   const popularApps = isWin
     ? ["steam.exe", "discord.exe", "telegram.exe", "epicgameslauncher.exe"]
-    : ["safari.app", "discord.app", "telegram.app"];
+    : ["Safari", "Google Chrome", "Discord", "Telegram"];
   const safeAppWhitelist = rules.appWhitelist || [];
 
   return (

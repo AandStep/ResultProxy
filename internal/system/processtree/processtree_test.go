@@ -147,3 +147,4 @@ func TestScanIntervalIsReasonable(t *testing.T) {
 		t.Fatalf("scanInterval out of expected range: %v", scanInterval)
 	}
 }
+

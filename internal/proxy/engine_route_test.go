@@ -497,3 +497,45 @@ func TestBuildRoute_ProxyMode_AppWhitelistGetsDirectRule(t *testing.T) {
 		t.Fatalf("expected process_path_regex direct rule with both entries, rules=%+v", route.Rules)
 	}
 }
+
+// TestAppWhitelistPathRegexes_BundlePathRegex verifies that for each
+// whitelisted name two regexes are generated: one matching the binary basename
+// at the end of the process path, and one matching anything inside a
+// <name>.app bundle directory. The second regex is critical on macOS where
+// apps like Safari use XPC sub-processes (e.g. com.apple.WebKit.Networking)
+// that make the actual network connections and live inside Safari.app.
+func TestAppWhitelistPathRegexes_BundlePathRegex(t *testing.T) {
+	regexes := appWhitelistPathRegexes([]string{"Safari", "Discord"})
+	// 2 entries × 2 regexes each = 4 total
+	if len(regexes) != 4 {
+		t.Fatalf("expected 4 regexes (2 per entry), got %d: %v", len(regexes), regexes)
+	}
+
+	type check struct {
+		regex string
+		path  string
+		want  bool
+	}
+	checks := []check{
+		// Binary basename regexes
+		{regexes[0], "/Applications/Safari.app/Contents/MacOS/Safari", true},
+		{regexes[0], "/Applications/Discord.app/Contents/MacOS/Discord", false},
+		// Bundle-path regexes catch XPC sub-processes
+		{regexes[1], "/Applications/Safari.app/Contents/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking", true},
+		{regexes[1], "/Applications/Safari.app/Contents/MacOS/Safari", true},
+		{regexes[1], "/Applications/Chromium.app/Contents/MacOS/Chromium", false},
+		// Discord regexes
+		{regexes[2], "/Applications/Discord.app/Contents/MacOS/Discord", true},
+		{regexes[3], "/Applications/Discord.app/Contents/Frameworks/Discord Helper.app/Contents/MacOS/Discord Helper", true},
+	}
+	for _, c := range checks {
+		re, err := regexp.Compile(c.regex)
+		if err != nil {
+			t.Fatalf("invalid regex %q: %v", c.regex, err)
+		}
+		got := re.MatchString(c.path)
+		if got != c.want {
+			t.Errorf("regex %q against %q: got %v, want %v", c.regex, c.path, got, c.want)
+		}
+	}
+}
