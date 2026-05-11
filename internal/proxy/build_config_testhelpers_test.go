@@ -15,12 +15,22 @@
 
 package proxy
 
-type SystemProxy interface {
-	Set(addr string, bypass []string) error
+import "testing"
 
-	Disable() error
+func mustBuildTunnelModeConfig(t *testing.T, cfg EngineConfig) SingBoxConfig {
+	t.Helper()
+	out, err := BuildTunnelModeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
 
-	DisableSync()
-
-	ApplyKillSwitch() error
+func mustBuildProxyModeConfig(t *testing.T, cfg EngineConfig) SingBoxConfig {
+	t.Helper()
+	out, err := BuildProxyModeConfig(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
 }

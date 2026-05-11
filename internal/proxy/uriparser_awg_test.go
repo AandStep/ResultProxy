@@ -71,7 +71,7 @@ func TestAmneziaWGURIRoundTripAWG2Fields(t *testing.T) {
 		}
 	}
 
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{IP: entry.IP, Port: entry.Port, Type: entry.Type, Extra: entry.Extra},
 		Mode:  ProxyModeTunnel,
 	})
@@ -138,7 +138,7 @@ func TestAmneziaWGURICaseInsensitiveCapitalKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{IP: entry.IP, Port: entry.Port, Type: entry.Type, Extra: entry.Extra},
 		Mode:  ProxyModeTunnel,
 	})

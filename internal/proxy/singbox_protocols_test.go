@@ -36,7 +36,7 @@ func TestWireGuardEndpointConfigParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "127.0.0.1",
 			Port:  51820,
@@ -83,7 +83,7 @@ func TestAmneziaWGEndpointConfigIncludesAmneziaSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "127.0.0.1",
 			Port:  51820,
@@ -121,7 +121,7 @@ func TestHysteria2OutboundConfigParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "example.com",
 			Port:  443,
@@ -150,7 +150,7 @@ func TestSSTunnelConfigParsesWithDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:       "example.com",
 			Port:     443,

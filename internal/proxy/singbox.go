@@ -262,17 +262,21 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 // mode is logged — silenced during reload to avoid noise.
 func (e *SingBoxEngine) bootLocked(ctx context.Context, cfg EngineConfig, announceMode bool) error {
 	var sbConfig SingBoxConfig
+	var buildErr error
 	switch cfg.Mode {
 	case ProxyModeTunnel:
-		sbConfig = BuildTunnelModeConfig(cfg)
+		sbConfig, buildErr = BuildTunnelModeConfig(cfg)
 		if announceMode {
 			e.log.Info("[SING-BOX] Режим: Туннелирование (TUN)")
 		}
 	default:
-		sbConfig = BuildProxyModeConfig(cfg)
+		sbConfig, buildErr = BuildProxyModeConfig(cfg)
 		if announceMode {
 			e.log.Info("[SING-BOX] Режим: Системный прокси (mixed)")
 		}
+	}
+	if buildErr != nil {
+		return fmt.Errorf("sing-box config: %w", buildErr)
 	}
 
 	if announceMode {

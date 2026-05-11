@@ -28,9 +28,15 @@ const (
 )
 
 func validateEngineConfig(cfg EngineConfig) (string, error) {
-	sb := BuildProxyModeConfig(cfg)
+	sb, err := BuildProxyModeConfig(cfg)
+	if err != nil {
+		return ConnectErrorInvalidConfig, err
+	}
 	if cfg.Mode == ProxyModeTunnel {
-		sb = BuildTunnelModeConfig(cfg)
+		sb, err = BuildTunnelModeConfig(cfg)
+		if err != nil {
+			return ConnectErrorInvalidConfig, err
+		}
 	}
 
 	if err := validateRouteFinalTarget(sb); err != nil {
@@ -100,8 +106,12 @@ func validateProtocolRequiredFields(proxyCfg ProxyConfig) error {
 		if strings.TrimSpace(getStringField(extra, "public_key", getStringField(extra, "publicKey", ""))) == "" {
 			return fmt.Errorf("%s requires public_key", strings.ToLower(pt))
 		}
-		if len(stringListFromExtra(extra, "address", "local_address", "localAddress")) == 0 {
+		addrs := stringListFromExtra(extra, "address", "local_address", "localAddress")
+		if len(addrs) == 0 {
 			return fmt.Errorf("%s requires address", strings.ToLower(pt))
+		}
+		if _, err := normalizeWireGuardLocalPrefixes(addrs); err != nil {
+			return fmt.Errorf("%s address: %w", strings.ToLower(pt), err)
 		}
 		if len(stringListFromExtra(extra, "allowed_ips", "allowedIps")) == 0 {
 			return fmt.Errorf("%s requires allowed_ips", strings.ToLower(pt))

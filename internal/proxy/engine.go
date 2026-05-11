@@ -138,28 +138,28 @@ type SBInbound struct {
 }
 
 type SBOutbound struct {
-	Type       string           `json:"type"`
-	Tag        string           `json:"tag"`
-	Server     string           `json:"server,omitempty"`
-	ServerPort int              `json:"server_port,omitempty"`
-	Username   string           `json:"username,omitempty"`
-	Password   string           `json:"password,omitempty"`
-	Method     string           `json:"method,omitempty"`
-	Version    string           `json:"version,omitempty"`
-	UUID       string           `json:"uuid,omitempty"`
-	AlterId    int              `json:"alter_id,omitempty"`
-	Flow       string           `json:"flow,omitempty"`
-	PacketEncoding      string `json:"packet_encoding,omitempty"`
-	GlobalPadding       bool   `json:"global_padding,omitempty"`
-	AuthenticatedLength bool   `json:"authenticated_length,omitempty"`
-	Security            string `json:"security,omitempty"`
-	UpMbps     int              `json:"up_mbps,omitempty"`
-	DownMbps   int              `json:"down_mbps,omitempty"`
-	Obfs       *SBHysteria2Obfs `json:"obfs,omitempty"`
+	Type                string           `json:"type"`
+	Tag                 string           `json:"tag"`
+	Server              string           `json:"server,omitempty"`
+	ServerPort          int              `json:"server_port,omitempty"`
+	Username            string           `json:"username,omitempty"`
+	Password            string           `json:"password,omitempty"`
+	Method              string           `json:"method,omitempty"`
+	Version             string           `json:"version,omitempty"`
+	UUID                string           `json:"uuid,omitempty"`
+	AlterId             int              `json:"alter_id,omitempty"`
+	Flow                string           `json:"flow,omitempty"`
+	PacketEncoding      string           `json:"packet_encoding,omitempty"`
+	GlobalPadding       bool             `json:"global_padding,omitempty"`
+	AuthenticatedLength bool             `json:"authenticated_length,omitempty"`
+	Security            string           `json:"security,omitempty"`
+	UpMbps              int              `json:"up_mbps,omitempty"`
+	DownMbps            int              `json:"down_mbps,omitempty"`
+	Obfs                *SBHysteria2Obfs `json:"obfs,omitempty"`
 
 	TLS       *SBOutboundTLS       `json:"tls,omitempty"`
 	Transport *SBOutboundTransport `json:"transport,omitempty"`
-	
+
 	DomainStrategy string `json:"domain_strategy,omitempty"`
 }
 
@@ -208,13 +208,13 @@ type SBWireGuardPeer struct {
 }
 
 type SBWireGuardAmnezia struct {
-	JC    int    `json:"jc,omitempty"`
-	JMin  int    `json:"jmin,omitempty"`
-	JMax  int    `json:"jmax,omitempty"`
-	S1    int    `json:"s1,omitempty"`
-	S2    int    `json:"s2,omitempty"`
-	S3    int    `json:"s3,omitempty"`
-	S4    int    `json:"s4,omitempty"`
+	JC   int `json:"jc,omitempty"`
+	JMin int `json:"jmin,omitempty"`
+	JMax int `json:"jmax,omitempty"`
+	S1   int `json:"s1,omitempty"`
+	S2   int `json:"s2,omitempty"`
+	S3   int `json:"s3,omitempty"`
+	S4   int `json:"s4,omitempty"`
 	// H1-H4 are emitted as strings ("N" or "low-high") so that
 	// upstream sing-box-extended (>= v1.13.11-extended-2.0.0) can
 	// parse them into *Xbadoption.Range and randomize per packet
@@ -330,7 +330,7 @@ func appWhitelistPathRegexes(names []string) []string {
 	return out
 }
 
-func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
+func BuildProxyModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	port := cfg.LocalPort
 	if port == 0 {
 		port = getFreeLocalPort(14081)
@@ -339,10 +339,14 @@ func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
 	host, _ := splitHostPort(cfg.ListenAddr, "127.0.0.1", port)
 
 	dd := effectiveDataDir(cfg)
+	endpoints, err := buildEndpoints(cfg.Proxy)
+	if err != nil {
+		return SingBoxConfig{}, err
+	}
 	config := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: true},
 		DNS:       buildDNS(cfg),
-		Endpoints: buildEndpoints(cfg.Proxy),
+		Endpoints: endpoints,
 		Inbounds: []SBInbound{{
 			Type:       "mixed",
 			Tag:        "mixed-in",
@@ -354,10 +358,10 @@ func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config
+	return config, nil
 }
 
-func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
+func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	tunIPv4 := "172.19.0.1/30"
 	if cfg.TunIPv4 != "" {
 		tunIPv4 = cfg.TunIPv4
@@ -387,10 +391,14 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 	dd := effectiveDataDir(cfg)
 	outbounds := buildOutbounds(cfg.Proxy)
 
+	endpoints, err := buildEndpoints(cfg.Proxy)
+	if err != nil {
+		return SingBoxConfig{}, err
+	}
 	config := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: false},
 		DNS:       buildDNS(cfg),
-		Endpoints: buildEndpoints(cfg.Proxy),
+		Endpoints: endpoints,
 		Inbounds: []SBInbound{{
 			Type:                "tun",
 			Tag:                 "tun-in",
@@ -405,7 +413,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config
+	return config, nil
 }
 
 func buildOutbounds(proxy ProxyConfig) []SBOutbound {
