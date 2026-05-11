@@ -182,6 +182,8 @@ Section
   SetOutPath $INSTDIR
 
   !insertmacro wails.files
+  ; sing-box naive (Cronet / purego): must sit next to ResultV.exe (see scripts/ensure-libcronet-windows.ps1)
+  File "/oname=libcronet.dll" "..\libcronet.dll"
 
   CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
   CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"

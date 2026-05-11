@@ -69,6 +69,10 @@ jobs:
           "NSISDIR=$nsisRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
           & $makensis /VERSION
 
+      - name: Stage libcronet.dll (sing-box naive / Cronet)
+        shell: pwsh
+        run: ./scripts/ensure-libcronet-windows.ps1
+
       - name: Build Windows app and installer
         shell: pwsh
         env:
@@ -81,6 +85,18 @@ jobs:
             Write-Warning "Secret SUBSCRIPTION_ENCRYPT_KEY not set — building without decryption key"
             wails build -clean -nsis -platform windows/amd64
           }
+
+      - name: Copy libcronet.dll next to portable exe
+        shell: pwsh
+        run: |
+          $dll = Join-Path (Get-Location) "build/windows/libcronet.dll"
+          if (-not (Test-Path $dll)) { throw "libcronet.dll missing — run scripts/ensure-libcronet-windows.ps1" }
+          $portable = Get-ChildItem -Path "build/bin" -Filter "*.exe" -File |
+            Where-Object { $_.Name -notlike "*-installer.exe" } |
+            Select-Object -First 1
+          if (-not $portable) { throw "Portable exe not found under build/bin" }
+          Copy-Item -LiteralPath $dll -Destination $portable.DirectoryName -Force
+          Write-Host "Copied libcronet.dll beside $($portable.Name)"
 
       - name: Validate Windows artifacts
         shell: pwsh

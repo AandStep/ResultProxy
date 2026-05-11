@@ -927,6 +927,57 @@ func runPostStartProbe(ctx context.Context, proxyTypeLower, ip string, port, loc
 				return "post_start_probe_failed", r
 			}
 		}
+	case "naiveproxy", "naive":
+		if mode == ProxyModeProxy {
+			proxyAddr := fmt.Sprintf("127.0.0.1:%d", localPort)
+			var ok bool
+			var r string
+			delays := []time.Duration{300 * time.Millisecond, 600 * time.Millisecond}
+			for i := 0; i < 3; i++ {
+				if ctx.Err() != nil {
+					return "cancelled", "connect cancelled"
+				}
+				ok, r = probeHTTPThroughProxyProbe(proxyAddr)
+				if ok {
+					break
+				}
+				if i < len(delays) {
+					if !sleepOrCancel(ctx, delays[i]) {
+						return "cancelled", "connect cancelled"
+					}
+				}
+			}
+			if !ok {
+				if r == "" {
+					r = "naiveproxy proxy e2e probe failed"
+				}
+				return "post_start_probe_failed", r
+			}
+		} else if mode == ProxyModeTunnel {
+			var ok bool
+			var r string
+			delays := []time.Duration{300 * time.Millisecond, 600 * time.Millisecond}
+			for i := 0; i < 3; i++ {
+				if ctx.Err() != nil {
+					return "cancelled", "connect cancelled"
+				}
+				ok, r = probeTunnelHTTPProbe()
+				if ok {
+					break
+				}
+				if i < len(delays) {
+					if !sleepOrCancel(ctx, delays[i]) {
+						return "cancelled", "connect cancelled"
+					}
+				}
+			}
+			if !ok {
+				if r == "" {
+					r = "naiveproxy e2e probe failed"
+				}
+				return "post_start_probe_failed", r
+			}
+		}
 	}
 
 	// General tunnel probe: verify internet works through the TUN before claiming

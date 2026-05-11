@@ -332,6 +332,27 @@ func buildProxyOutboundRaw(proxy ProxyConfig) SBOutbound {
 		}
 		return out
 
+	case "NAIVEPROXY", "NAIVE", "naive":
+		// sing-box naive outbound (with_naive_outbound) uses Cronet for TLS; TLS
+		// in JSON is only enabled + server_name (see sing-box naive NewOutbound).
+		sni := firstNonEmpty(
+			getStringField(extra, "sni", ""),
+			getStringField(extra, "server_name", ""),
+			proxy.IP,
+		)
+		return SBOutbound{
+			Type:       "naive",
+			Tag:        "proxy",
+			Server:     proxy.IP,
+			ServerPort: proxy.Port,
+			Username:   proxy.Username,
+			Password:   proxy.Password,
+			TLS: &SBOutboundTLS{
+				Enabled:    true,
+				ServerName: sni,
+			},
+		}
+
 	default:
 		return SBOutbound{
 			Type:       "http",

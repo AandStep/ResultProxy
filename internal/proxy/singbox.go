@@ -38,7 +38,6 @@ import (
 	N "github.com/sagernet/sing/common/network"
 
 	"resultproxy-wails/internal/logger"
-	"resultproxy-wails/internal/system"
 )
 
 
@@ -277,19 +276,6 @@ func (e *SingBoxEngine) bootLocked(ctx context.Context, cfg EngineConfig, announ
 	}
 	if buildErr != nil {
 		return fmt.Errorf("sing-box config: %w", buildErr)
-	}
-
-	if announceMode {
-		// Surface the uTLS default once per start so users can see which
-		// browser fingerprint their traffic is wearing. Only relevant on
-		// Windows where WebView2 ships separately from the OS; elsewhere
-		// the fallback string is logged as-is.
-		fp := system.WebViewFingerprint()
-		if v := system.WebView2Version(); v != "" {
-			e.log.Info(fmt.Sprintf("[SING-BOX] uTLS отпечаток по умолчанию: %s (WebView2 %s)", fp, v))
-		} else {
-			e.log.Info(fmt.Sprintf("[SING-BOX] uTLS отпечаток по умолчанию: %s", fp))
-		}
 	}
 
 	configJSON, err := json.MarshalIndent(sbConfig, "", "  ")
