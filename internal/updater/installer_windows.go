@@ -24,6 +24,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // currentPlatformKey returns the platforms map key for the current Windows binary.
@@ -51,9 +52,9 @@ func isInstalledBuild() bool {
 }
 
 // installUpdate installs the downloaded artifact.
-// For portable builds: writes a batch handover script and exits.
-// For NSIS installer builds: runs the silent installer and exits.
-// This function calls os.Exit on success and never returns normally.
+// For portable builds: stages detached copy+restart handover script.
+// For NSIS installer builds: stages detached silent-installer handover script.
+// Caller performs graceful process quit after this returns nil.
 func installUpdate(newExePath string) error {
 	if isInstalledBuild() {
 		return installNSIS(newExePath)
@@ -61,50 +62,127 @@ func installUpdate(newExePath string) error {
 	return installPortable(newExePath)
 }
 
-// installPortable performs the bat-handover update for the portable exe.
-// It backs up the current exe, writes a .bat that copies the new exe over it,
-// starts the bat asynchronously, then exits. The bat restarts the app after copying.
+// installPortable stages the update: launches a PowerShell script that waits
+// for the process to fully exit before copying the new exe, then returns nil
+// so the caller can do a graceful wailsRuntime.Quit instead of os.Exit.
+// The script waits up to 15 s for the file lock to be released.
 func installPortable(newExePath string) error {
 	currentExe, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("get current exe: %w", err)
 	}
 	currentExe = filepath.Clean(currentExe)
-
-	batPath := filepath.Join(os.TempDir(), "resultv-update.bat")
-
-	// Windows batch lines must use CRLF and paths must be double-quoted.
-	// %%~f0 expands to the bat's own full path (for self-deletion).
-	bat := "@echo off\r\n" +
-		"timeout /t 2 /nobreak > NUL\r\n" +
-		fmt.Sprintf("if exist \"%s.bak\" del /f /q \"%s.bak\"\r\n", currentExe, currentExe) +
-		fmt.Sprintf("copy /Y \"%s\" \"%s.bak\" > NUL\r\n", currentExe, currentExe) +
-		fmt.Sprintf("copy /Y \"%s\" \"%s\" > NUL\r\n", newExePath, currentExe) +
-		fmt.Sprintf("del /f /q \"%s\"\r\n", newExePath) +
-		fmt.Sprintf("start \"\" \"%s\"\r\n", currentExe) +
-		"del \"%%~f0\"\r\n"
-
-	if err := os.WriteFile(batPath, []byte(bat), 0o600); err != nil {
-		return fmt.Errorf("write updater bat: %w", err)
+	logPath := filepath.Join(os.TempDir(), "resultv-updater.log")
+	script := buildPortableHandoverScript(newExePath, currentExe, logPath)
+	if err := runPowerShellDetached(script); err != nil {
+		return err
 	}
 
-	cmd := exec.Command("cmd.exe", "/C", batPath)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	if err := cmd.Start(); err != nil {
-		os.Remove(batPath)
-		return fmt.Errorf("start updater bat: %w", err)
-	}
-
-	os.Exit(0)
-	return nil // unreachable
+	// Return nil — the caller (app.go) must call wailsRuntime.Quit to
+	// properly release all WebView2 handles before the script copies the exe.
+	return nil
 }
 
-// installNSIS runs the NSIS installer silently and exits the current process.
+// installNSIS stages silent NSIS install in a detached script. The script waits
+// for this process to exit, runs installer /S, and attempts to relaunch app.
+// Caller does graceful quit after this returns.
 func installNSIS(installerPath string) error {
-	cmd := exec.Command(installerPath, "/S")
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("NSIS silent install: %w", err)
+	currentExe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get current exe: %w", err)
 	}
-	os.Exit(0)
-	return nil // unreachable
+	currentExe = filepath.Clean(currentExe)
+	logPath := filepath.Join(os.TempDir(), "resultv-updater.log")
+	script := buildInstallerHandoverScript(os.Getpid(), installerPath, currentExe, logPath)
+	return runPowerShellDetached(script)
+}
+
+func buildPortableHandoverScript(srcPath, dstPath, logPath string) string {
+	src := powershellEscapeSingleQuoted(srcPath)
+	dst := powershellEscapeSingleQuoted(dstPath)
+	log := powershellEscapeSingleQuoted(logPath)
+	return fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$logPath = '%s'
+function Write-UpdateLog([string]$msg) {
+  $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+  Add-Content -LiteralPath $logPath -Value ("[$ts] " + $msg)
+}
+Write-UpdateLog 'portable handover started'
+Start-Sleep -Seconds 8
+$ok = $false
+for($i=0;$i-lt 20;$i++){
+  try {
+    [IO.File]::Copy('%s','%s',$true)
+    $ok = $true
+    Write-UpdateLog ("portable update copy succeeded on attempt " + ($i + 1))
+    break
+  } catch {
+    Write-UpdateLog ("portable update copy failed attempt " + ($i + 1) + ": " + $_.Exception.Message)
+    Start-Sleep -Seconds 1
+  }
+}
+if($ok){
+  Remove-Item -LiteralPath '%s' -Force -ErrorAction SilentlyContinue
+  Write-UpdateLog 'starting updated executable'
+  Start-Process -FilePath '%s' | Out-Null
+  Write-UpdateLog 'restart launched'
+} else {
+  Write-UpdateLog 'portable handover aborted: copy never succeeded'
+}
+`, log, src, dst, src, dst)
+}
+
+func buildInstallerHandoverScript(pid int, installerPath, currentExePath, logPath string) string {
+	installer := powershellEscapeSingleQuoted(installerPath)
+	currentExe := powershellEscapeSingleQuoted(currentExePath)
+	log := powershellEscapeSingleQuoted(logPath)
+	return fmt.Sprintf(`$ErrorActionPreference = 'Continue'
+$logPath = '%s'
+function Write-UpdateLog([string]$msg) {
+  $ts = Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'
+  Add-Content -LiteralPath $logPath -Value ("[$ts] " + $msg)
+}
+Write-UpdateLog 'installer handover started'
+try {
+  Wait-Process -Id %d -Timeout 45 -ErrorAction Stop
+  Write-UpdateLog 'wait-process completed'
+} catch {
+  Write-UpdateLog ("wait-process warning: " + $_.Exception.Message)
+}
+$installerProc = Start-Process -FilePath '%s' -ArgumentList '/S' -Wait -PassThru
+Write-UpdateLog ("installer exit code: " + $installerProc.ExitCode)
+if($installerProc.ExitCode -eq 0){
+  Start-Process -FilePath '%s' | Out-Null
+  Write-UpdateLog 'relaunch requested'
+} else {
+  Write-UpdateLog 'installer reported non-zero exit code, relaunch skipped'
+}
+`, log, pid, installer, currentExe)
+}
+
+func runPowerShellDetached(script string) error {
+	psExe := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+	if _, err := os.Stat(psExe); err != nil {
+		psExe = "powershell"
+	}
+
+	scriptPath := filepath.Join(os.TempDir(), fmt.Sprintf("resultv-updater-%d.ps1", time.Now().UnixNano()))
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		return fmt.Errorf("write updater script: %w", err)
+	}
+
+	cmd := exec.Command(psExe,
+		"-NonInteractive", "-NoProfile",
+		"-ExecutionPolicy", "Bypass",
+		"-File", scriptPath,
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("start updater script: %w", err)
+	}
+	return nil
+}
+
+func powershellEscapeSingleQuoted(s string) string {
+	return strings.ReplaceAll(s, "'", "''")
 }

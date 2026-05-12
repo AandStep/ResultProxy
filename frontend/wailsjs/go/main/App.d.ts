@@ -11,6 +11,8 @@ export function ApplyMode(arg1:string):Promise<proxy.ConnectResultDTO>;
 
 export function CancelConnect():Promise<void>;
 
+export function CancelUpdate():Promise<void>;
+
 export function Connect(arg1:proxy.ProxyConfig,arg2:config.RoutingRules,arg3:boolean,arg4:boolean):Promise<proxy.ConnectResultDTO>;
 
 export function DeleteSubscription(arg1:string):Promise<void>;
@@ -70,6 +72,8 @@ export function SetMode(arg1:string):Promise<void>;
 export function SetStartInTray(arg1:boolean):Promise<void>;
 
 export function SetTrayIcon(arg1:Array<number>):Promise<void>;
+
+export function StartUpdate():Promise<void>;
 
 export function SyncProxies(arg1:Array<config.ProxyEntry>):Promise<void>;
 

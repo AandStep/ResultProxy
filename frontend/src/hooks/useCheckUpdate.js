@@ -20,7 +20,7 @@ import { compareVersions } from "../utils/versionCheck";
 import { GetVersion } from "../../wailsjs/go/main/App";
 
 const UPDATE_URL =
-    "https://raw.githubusercontent.com/AandStep/ResultV/main/update.json";
+    "https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json";
 
 
 async function resolveLocalVersion() {

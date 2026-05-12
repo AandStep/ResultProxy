@@ -14,6 +14,10 @@ export function CancelConnect() {
   return window['go']['main']['App']['CancelConnect']();
 }
 
+export function CancelUpdate() {
+  return window['go']['main']['App']['CancelUpdate']();
+}
+
 export function Connect(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['Connect'](arg1, arg2, arg3, arg4);
 }
@@ -134,6 +138,10 @@ export function SetTrayIcon(arg1) {
   return window['go']['main']['App']['SetTrayIcon'](arg1);
 }
 
+export function StartUpdate() {
+  return window['go']['main']['App']['StartUpdate']();
+}
+
 export function SyncProxies(arg1) {
   return window['go']['main']['App']['SyncProxies'](arg1);
 }
@@ -148,12 +156,4 @@ export function ToggleKillSwitch(arg1) {
 
 export function UpdateRules(arg1) {
   return window['go']['main']['App']['UpdateRules'](arg1);
-}
-
-export function StartUpdate() {
-  return window['go']['main']['App']['StartUpdate']();
-}
-
-export function CancelUpdate() {
-  return window['go']['main']['App']['CancelUpdate']();
 }

@@ -2251,8 +2251,16 @@ func (a *App) StartUpdate() {
 
 		if err := u.Install(path); err != nil {
 			failEvent("install", err.Error())
+			return
 		}
-		// Install calls os.Exit on success — execution never reaches here.
+		// Install staged the update script. Gracefully quit Wails so that
+		// WebView2 releases all exe handles before the script copies the file.
+		emit("update:restarting", nil)
+		time.Sleep(300 * time.Millisecond) // let the event reach the frontend
+		// Ensure BeforeClose allows real process exit (not "hide to tray"),
+		// otherwise the updater handover script cannot replace the running exe.
+		a.markQuitRequested()
+		wailsRuntime.Quit(a.ctx)
 	}()
 }
 

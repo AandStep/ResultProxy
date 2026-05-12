@@ -43,8 +43,6 @@ export namespace config {
 	    dnsServers?: string[];
 	    tunIpv4?: string;
 	    favorites?: string[];
-	    allowInsecureProxyTls?: boolean;
-	    disableHwidInRequests?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -64,8 +62,6 @@ export namespace config {
 	        this.dnsServers = source["dnsServers"];
 	        this.tunIpv4 = source["tunIpv4"];
 	        this.favorites = source["favorites"];
-	        this.allowInsecureProxyTls = source["allowInsecureProxyTls"];
-	        this.disableHwidInRequests = source["disableHwidInRequests"];
 	    }
 	}
 	export class ProxyEntry {
