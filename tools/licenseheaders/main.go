@@ -115,6 +115,8 @@ func trackedFiles() ([]string, error) {
 
 func shouldSkip(path string) bool {
 	p := strings.ReplaceAll(path, "\\", "/")
+
+	// Hard-coded dirs that never get our GPL header.
 	skipped := []string{
 		"build/",
 		"frontend/dist/",
@@ -122,11 +124,34 @@ func shouldSkip(path string) bool {
 		"frontend/wailsjs/",
 		"node_modules/",
 		"vendor/",
+		// Vendored third-party code with its own license — do not overwrite.
+		"internal/getlantern_systray/",
 	}
 	for _, prefix := range skipped {
 		if strings.HasPrefix(p, prefix) {
 			return true
 		}
+	}
+
+	// Any directory (or its parent) that contains a .no-licenseheader sentinel
+	// file is also skipped. Drop a .no-licenseheader file next to any future
+	// vendored package to protect it automatically.
+	return hasNoLicenseHeaderMarker(p)
+}
+
+// hasNoLicenseHeaderMarker walks up the path looking for a .no-licenseheader
+// file in any ancestor directory up to the repo root (we stop at 8 levels to
+// avoid walking past the repo).
+func hasNoLicenseHeaderMarker(filePath string) bool {
+	dir := filepath.Dir(filePath)
+	for range 8 {
+		if dir == "." || dir == "" {
+			break
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".no-licenseheader")); err == nil {
+			return true
+		}
+		dir = filepath.Dir(dir)
 	}
 	return false
 }

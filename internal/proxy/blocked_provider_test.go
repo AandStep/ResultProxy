@@ -17,28 +17,51 @@ package proxy
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
-func TestHTTPBlockedListProvider(t *testing.T) {
+// newTestCountryServer spins up a TLS server that mimics the project's
+// api.php response shape. The returned client has a CA pool that trusts the
+// httptest cert.
+func newTestCountryServer(t *testing.T, hits *int32, body string) *httptest.Server {
+	t.Helper()
 	mux := http.NewServeMux()
-	mux.HandleFunc("/country", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"country":"RU"}`))
+	mux.HandleFunc("/api.php", func(w http.ResponseWriter, r *http.Request) {
+		if hits != nil {
+			atomic.AddInt32(hits, 1)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
 	})
-	mux.HandleFunc("/list/ru.txt", func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewTLSServer(mux)
+}
+
+func TestHTTPBlockedListProvider(t *testing.T) {
+	var hits int32
+	countrySrv := newTestCountryServer(t, &hits, `{"country":"RU","country_lower":"ru"}`)
+	defer countrySrv.Close()
+
+	listMux := http.NewServeMux()
+	listMux.HandleFunc("/list/ru.txt", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("discord.com\nytimg.com\n"))
 	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
+	listSrv := httptest.NewServer(listMux)
+	defer listSrv.Close()
+
+	t.Setenv("RESULTPROXY_COUNTRY_API_URL", countrySrv.URL+"/api.php")
+	cc := NewCountryClient(t.TempDir())
+	cc.httpClient = countrySrv.Client()
 
 	p := &HTTPBlockedListProvider{
-		Client:          srv.Client(),
-		CountryURL:      srv.URL + "/country",
-		ListURLTemplate: srv.URL + "/list/{country}.txt",
+		Client:          listSrv.Client(),
+		Country:         cc,
+		ListURLTemplate: listSrv.URL + "/list/{country}.txt",
 	}
 
 	country, err := p.ResolveCountry(context.Background())
@@ -57,31 +80,100 @@ func TestHTTPBlockedListProvider(t *testing.T) {
 	}
 }
 
-func TestResolveCountry_FallbackEndpoints(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/bad", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	})
-	mux.HandleFunc("/ok", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"countryCode":"DE"}`))
-	})
-	srv := httptest.NewServer(mux)
+// Calling ResolveCountry twice should hit the network only once — the
+// CountryClient caches "self" for countryCacheTTL.
+func TestCountryClientCachesSelfLookup(t *testing.T) {
+	var hits int32
+	srv := newTestCountryServer(t, &hits, `{"country":"DE","country_lower":"de"}`)
 	defer srv.Close()
 
-	p := &HTTPBlockedListProvider{
-		Client:     srv.Client(),
-		CountryURL: srv.URL + "/bad",
-	}
-	orig := os.Getenv("RESULTPROXY_COUNTRY_SOURCES")
-	_ = os.Setenv("RESULTPROXY_COUNTRY_SOURCES", srv.URL+"/bad,"+srv.URL+"/ok")
-	defer func() { _ = os.Setenv("RESULTPROXY_COUNTRY_SOURCES", orig) }()
+	cc := NewCountryClient(t.TempDir())
+	cc.apiURL = srv.URL + "/api.php"
+	cc.httpClient = srv.Client()
 
-	country, err := p.ResolveCountry(context.Background())
-	if err != nil {
-		t.Fatalf("resolve country with fallback: %v", err)
+	for i := 0; i < 3; i++ {
+		country, err := cc.LookupSelfCountry(context.Background())
+		if err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+		if country != "de" {
+			t.Fatalf("call %d: expected de, got %s", i, country)
+		}
 	}
-	if country != "de" {
-		t.Fatalf("expected de, got %s", country)
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("expected 1 network hit (cached after first), got %d", got)
+	}
+}
+
+// Per-IP cache: same IP queried twice = one network call; different IPs =
+// separate calls.
+func TestCountryClientCachesByIP(t *testing.T) {
+	var hits int32
+	srv := newTestCountryServer(t, &hits, `{"country":"US","country_lower":"us"}`)
+	defer srv.Close()
+
+	cc := NewCountryClient(t.TempDir())
+	cc.apiURL = srv.URL + "/api.php"
+	cc.httpClient = srv.Client()
+
+	for i := 0; i < 2; i++ {
+		if _, err := cc.LookupCountryByIP(context.Background(), "1.2.3.4"); err != nil {
+			t.Fatalf("call %d for 1.2.3.4: %v", i, err)
+		}
+	}
+	if _, err := cc.LookupCountryByIP(context.Background(), "5.6.7.8"); err != nil {
+		t.Fatalf("call for 5.6.7.8: %v", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 2 {
+		t.Fatalf("expected 2 hits (one per unique IP), got %d", got)
+	}
+}
+
+// Hostname inputs (e.g. AmneziaWG `game.sunsetglow.today`) must be resolved
+// via DNS before being sent to the API — MaxMind only understands IP
+// literals and would return "??" otherwise. The query that reaches the
+// upstream server must NOT contain the raw hostname.
+func TestCountryClientResolvesHostnameBeforeQuery(t *testing.T) {
+	var seen string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api.php", func(w http.ResponseWriter, r *http.Request) {
+		seen = r.URL.Query().Get("ip")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"country":"US","country_lower":"us"}`))
+	})
+	srv := httptest.NewTLSServer(mux)
+	defer srv.Close()
+
+	cc := NewCountryClient(t.TempDir())
+	cc.apiURL = srv.URL + "/api.php"
+	cc.httpClient = srv.Client()
+
+	// localhost resolves to 127.0.0.1 on every CI host — used as a stand-in
+	// for an arbitrary hostname so the test doesn't depend on external DNS.
+	country, err := cc.LookupCountryByIP(context.Background(), "localhost")
+	if err != nil {
+		t.Fatalf("lookup hostname: %v", err)
+	}
+	if country != "us" {
+		t.Fatalf("expected us, got %s", country)
+	}
+	if seen == "localhost" {
+		t.Fatalf("raw hostname leaked to upstream API: %q", seen)
+	}
+	if net.ParseIP(seen) == nil {
+		t.Fatalf("API received non-IP value: %q", seen)
+	}
+}
+
+// Plaintext HTTP overrides must be rejected even when the env var points at
+// http://... — the whole purpose of this client is no plaintext IP traffic.
+func TestCountryClientRefusesPlaintext(t *testing.T) {
+	cc := NewCountryClient(t.TempDir())
+	cc.apiURL = "http://attacker.example/api.php"
+
+	_, err := cc.LookupSelfCountry(context.Background())
+	if err == nil {
+		t.Fatal("expected error for plaintext http URL, got nil")
 	}
 }
 

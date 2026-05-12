@@ -10,6 +10,7 @@ export namespace config {
 	    trafficTotal?: number;
 	    expireUnix?: number;
 	    iconUrl?: string;
+	    allowInsecure?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Subscription(source);
@@ -26,6 +27,7 @@ export namespace config {
 	        this.trafficTotal = source["trafficTotal"];
 	        this.expireUnix = source["expireUnix"];
 	        this.iconUrl = source["iconUrl"];
+	        this.allowInsecure = source["allowInsecure"];
 	    }
 	}
 	export class AppSettings {
@@ -41,6 +43,8 @@ export namespace config {
 	    dnsServers?: string[];
 	    tunIpv4?: string;
 	    favorites?: string[];
+	    allowInsecureProxyTls?: boolean;
+	    disableHwidInRequests?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new AppSettings(source);
@@ -60,6 +64,8 @@ export namespace config {
 	        this.dnsServers = source["dnsServers"];
 	        this.tunIpv4 = source["tunIpv4"];
 	        this.favorites = source["favorites"];
+	        this.allowInsecureProxyTls = source["allowInsecureProxyTls"];
+	        this.disableHwidInRequests = source["disableHwidInRequests"];
 	    }
 	}
 	export class ProxyEntry {

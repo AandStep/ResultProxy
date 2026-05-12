@@ -5,7 +5,7 @@ import {proxy} from '../models';
 import {logger} from '../models';
 import {system} from '../models';
 
-export function AddSubscription(arg1:string,arg2:string):Promise<Array<config.ProxyEntry>>;
+export function AddSubscription(arg1:string,arg2:string,arg3:boolean):Promise<Array<config.ProxyEntry>>;
 
 export function ApplyMode(arg1:string):Promise<proxy.ConnectResultDTO>;
 
@@ -19,9 +19,9 @@ export function DetectCountry(arg1:string):Promise<string>;
 
 export function Disconnect():Promise<void>;
 
-export function ExportConfig():Promise<string>;
+export function ExportConfig(arg1:string):Promise<string>;
 
-export function FetchSubscription(arg1:string):Promise<Array<config.ProxyEntry>>;
+export function FetchSubscription(arg1:string,arg2:boolean):Promise<Array<config.ProxyEntry>>;
 
 export function GetConfig():Promise<config.AppConfig>;
 
@@ -43,7 +43,7 @@ export function GetVersion():Promise<string>;
 
 export function HandleDeepLink(arg1:string):Promise<void>;
 
-export function ImportConfig(arg1:string):Promise<void>;
+export function ImportConfig(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
 export function IsAdmin():Promise<boolean>;
 

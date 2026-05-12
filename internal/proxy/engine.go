@@ -343,7 +343,7 @@ func BuildProxyModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	if err != nil {
 		return SingBoxConfig{}, err
 	}
-	config := SingBoxConfig{
+	sbCfg := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: true},
 		DNS:       buildDNS(cfg),
 		Endpoints: endpoints,
@@ -358,7 +358,7 @@ func BuildProxyModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config, nil
+	return sbCfg, nil
 }
 
 func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
@@ -395,7 +395,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	if err != nil {
 		return SingBoxConfig{}, err
 	}
-	config := SingBoxConfig{
+	sbCfg := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: false},
 		DNS:       buildDNS(cfg),
 		Endpoints: endpoints,
@@ -413,7 +413,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config, nil
+	return sbCfg, nil
 }
 
 func buildOutbounds(proxy ProxyConfig) []SBOutbound {
@@ -498,10 +498,17 @@ func buildDNS(cfg EngineConfig) *SBDNS {
 		return dns
 	}
 
-	// proxy mode: прямой UDP DNS без detour.
-	// Роутинг DNS через proxy-outbound создаёт circular dependency:
-	// DNS нужен для резолва трафика → DNS идёт через proxy → proxy нужно соединение → ...
-	// В proxy-режиме DNS-leaks несущественны (приложения используют системный прокси).
+	// proxy mode: prior versions used direct UDP DNS to 8.8.8.8/1.1.1.1
+	// with the comment "DNS leaks are insignificant in proxy mode (apps use
+	// system proxy)". That was wrong: plain UDP/53 to public resolvers is
+	// readable by the ISP and tags every TLS handshake with the queried
+	// domain. The sing-box engine resolves names for the proxy outbound too,
+	// so those queries leak even when the rest of the app traffic is
+	// tunneled. The fix: encrypt DNS by default via DoT.
+	//
+	// User-supplied custom DNS keep their explicit type (UDP if the user
+	// asked for it — we don't second-guess). When no custom DNS is set,
+	// emit TLS DNS entries (port 853) only.
 	servers := []SBDNSServer{}
 	if len(cfg.DNSServers) > 0 {
 		for i, raw := range cfg.DNSServers {
@@ -519,8 +526,8 @@ func buildDNS(cfg EngineConfig) *SBDNS {
 		servers = append(servers, SBDNSServer{Type: "local", Tag: "local"})
 	} else {
 		servers = []SBDNSServer{
-			{Type: "udp", Tag: "google", Server: "8.8.8.8"},
-			{Type: "udp", Tag: "cloudflare", Server: "1.1.1.1"},
+			{Type: "tls", Tag: "cloudflare-tls", Server: "1.1.1.1"},
+			{Type: "tls", Tag: "google-tls", Server: "8.8.8.8"},
 			{Type: "local", Tag: "local"},
 		}
 	}

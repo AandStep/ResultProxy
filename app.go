@@ -17,7 +17,9 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,6 +38,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
@@ -48,6 +51,27 @@ import (
 )
 
 var stableHWIDProvider = config.StableHardwareID
+
+// sameHostReferer returns referer when its host matches imageURL's host
+// (case-insensitive), else "". Stops the subscription URL (often containing
+// an opaque access token in the path) from leaking to third-party icon hosts.
+func sameHostReferer(referer, imageURL string) string {
+	if strings.TrimSpace(referer) == "" {
+		return ""
+	}
+	ru, err := url.Parse(referer)
+	if err != nil || ru.Host == "" {
+		return ""
+	}
+	iu, err := url.Parse(imageURL)
+	if err != nil || iu.Host == "" {
+		return ""
+	}
+	if !strings.EqualFold(ru.Host, iu.Host) {
+		return ""
+	}
+	return referer
+}
 
 const subscriptionPageUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 
@@ -620,10 +644,23 @@ func (a *App) ToggleKillSwitch(enable bool) error {
 	if enable && a.killSwitch != nil {
 		status := a.proxy.GetStatus()
 		proxyAddr := ""
+		var dnsServers []string
 		if status.CurrentProxy != nil {
 			proxyAddr = fmt.Sprintf("%s:%d", status.CurrentProxy.IP, status.CurrentProxy.Port)
+			// DNS-leak fix: kill switch used to allow udp/53 to any
+			// destination. We now pass the same DNS list the engine uses so
+			// the firewall only lets queries reach the configured resolvers.
+			// extractDNSIPs inside KillSwitch falls back to 1.1.1.1+8.8.8.8
+			// when this is empty.
+			if a.config != nil {
+				cfg := a.config.GetConfig()
+				dnsServers = append([]string(nil), cfg.Settings.DNSServers...)
+			}
+			if fromProxy := dnsServersFromProxyExtra(*status.CurrentProxy); len(fromProxy) > 0 {
+				dnsServers = fromProxy
+			}
 		}
-		if err := a.killSwitch.Enable(proxyAddr); err != nil {
+		if err := a.killSwitch.Enable(proxyAddr, dnsServers); err != nil {
 			a.log.Warning(fmt.Sprintf("[KILL SWITCH] Firewall недоступен, используем fallback: %v", err))
 
 			return a.proxy.ToggleKillSwitch(enable)
@@ -718,28 +755,50 @@ func (a *App) UpdateRules(rules config.RoutingRules) error {
 	return nil
 }
 
-func (a *App) ExportConfig() (string, error) {
+// ExportConfig returns a password-encrypted RESULTPROXY2: payload. The
+// password is enforced server-side (>= config.MinPasswordLength). UI must
+// prompt the user; sending an empty / short string returns
+// config.ErrPasswordTooShort.
+func (a *App) ExportConfig(password string) (string, error) {
 	if a.config == nil {
 		return "", fmt.Errorf("config manager not initialized")
 	}
 	cfg := a.config.GetConfig()
-	result, err := config.ExportConfig(cfg)
+	result, err := config.ExportConfig(cfg, password)
 	if err != nil {
-		a.log.Error(fmt.Sprintf("Ошибка экспорта: %v", err))
+		// Warn-level: password validation failures are part of normal UX,
+		// not bugs. The user-facing error message comes from the sentinel.
+		a.log.Warning(fmt.Sprintf("Ошибка экспорта: %v", err))
 		return "", err
 	}
-	a.log.Success("Конфигурация экспортирована")
+	a.log.Success("Конфигурация экспортирована (зашифровано)")
 	return result, nil
 }
 
-func (a *App) ImportConfig(data string) error {
+// ImportConfig accepts both RESULTPROXY2: (password required) and the legacy
+// RESULTPROXY: prefix (no password — surfaced with a warning).
+//
+//   - For v2 payloads: pass the user-supplied password. Wrong password
+//     returns config.ErrWrongPassword.
+//   - For legacy payloads: the first call returns config.ErrLegacyPlaintext
+//     so the UI can warn the user that the source export was unencrypted.
+//     The UI must re-call with allowLegacy=true once the user confirms.
+func (a *App) ImportConfig(data, password string, allowLegacy bool) error {
 	if a.config == nil {
 		return fmt.Errorf("config manager not initialized")
 	}
-	imported, err := config.ImportConfig(data)
+	imported, err := config.ImportConfig(data, password)
 	if err != nil {
-		a.log.Error(fmt.Sprintf("Ошибка импорта: %v", err))
-		return err
+		if errors.Is(err, config.ErrLegacyPlaintext) {
+			if !allowLegacy {
+				// Bubble up so the UI can show the "unencrypted export" warning.
+				return err
+			}
+			// User has acknowledged; fall through and apply.
+		} else {
+			a.log.Warning(fmt.Sprintf("Ошибка импорта: %v", err))
+			return err
+		}
 	}
 	existing := a.config.GetConfig()
 	merged := config.MergeImport(existing, imported)
@@ -883,29 +942,35 @@ func (a *App) SyncProxies(proxies []config.ProxyEntry) error {
 	return nil
 }
 
+// DetectCountry resolves an IP to its ISO-3166 alpha-2 country code via the
+// project-controlled GeoLite2 API. The previous implementation hit
+// http://ip-api.com over plaintext HTTP, leaking the queried IP and being
+// MITM-able. Failures yield "Unknown" so the UI can still render a row.
+//
+// The country is cached on disk (24h TTL) — a UI that renders flags for
+// hundreds of subscription servers triggers at most one network call per
+// unique IP per day.
 func (a *App) DetectCountry(ip string) (string, error) {
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("http://ip-api.com/json/%s?fields=status,countryCode", ip))
+	if a.smartProvider == nil || a.smartProvider.(*proxy.HTTPBlockedListProvider).Country == nil {
+		// Fallback path: smart provider isn't initialised yet (e.g. before
+		// engine boot). Build a one-off client; result still goes through
+		// the project API, never third-party.
+		cc := proxy.NewCountryClient(a.getUserDataPath())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		country, err := cc.LookupCountryByIP(ctx, ip)
+		if err != nil {
+			return "Unknown", err
+		}
+		return country, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	country, err := a.smartProvider.(*proxy.HTTPBlockedListProvider).Country.LookupCountryByIP(ctx, ip)
 	if err != nil {
 		return "Unknown", err
 	}
-	defer resp.Body.Close()
-
-	var result struct {
-		Status      string `json:"status"`
-		CountryCode string `json:"countryCode"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "Unknown", err
-	}
-
-	if result.Status == "success" && result.CountryCode != "" {
-		return strings.ToLower(result.CountryCode), nil
-	}
-
-	return "Unknown", nil
+	return country, nil
 }
 
 func parseSubscriptionUserInfoHeader(v string) (upload, download, total, expire int64) {
@@ -994,13 +1059,41 @@ func subscriptionEmptyBodyError(h http.Header) error {
 	return fmt.Errorf("%s. %s", reason, strings.Join(details, " | "))
 }
 
-func (a *App) subscriptionHWID() string {
+// subscriptionHWID returns the HWID header value for a subscription fetch.
+// The raw machine-wide HWID is hashed together with the subscription host
+// so the same device looks like a DIFFERENT id to provider A vs. provider B
+// — removing the cross-correlation channel a hostile provider ecosystem
+// could use to track users. Empty subURL (paste flow) falls back to the
+// legacy machine-wide HWID so providers that rely on it for billing /
+// device-limit still get a stable value within their own scope.
+func (a *App) subscriptionHWID(subURL string) string {
 	hwid, err := stableHWIDProvider(a.getUserDataPath())
 	if err != nil {
 		a.log.Warning(fmt.Sprintf("Не удалось получить HWID для запроса подписки: %v", err))
 		return ""
 	}
-	return strings.TrimSpace(hwid)
+	hwid = strings.TrimSpace(hwid)
+	if hwid == "" {
+		return ""
+	}
+	host := subscriptionHostFromURL(subURL)
+	if host == "" {
+		return hwid
+	}
+	sum := sha256.Sum256([]byte(hwid + "|" + host + "|resultv-sub-hwid-v2"))
+	return hex.EncodeToString(sum[:])
+}
+
+// subscriptionHostFromURL returns the lowercase host of a subscription URL,
+// or "" if parsing fails. We strip the port so foo.com:8080 and foo.com:443
+// share the same HWID (it's the same provider).
+func subscriptionHostFromURL(subURL string) string {
+	u, err := url.Parse(strings.TrimSpace(subURL))
+	if err != nil || u == nil {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	return host
 }
 
 func subscriptionIconCandidates(subURL string, h http.Header) []string {
@@ -1089,12 +1182,67 @@ func imageContentTypeFromBytes(buf []byte, headerCT string) string {
 	return ""
 }
 
+// isPrivateOrLoopback reports whether the given IP belongs to a range that
+// the icon-fetch must not reach. We block loopback, link-local, multicast,
+// unspecified, and all RFC1918 / unique-local v6 ranges. Without this an
+// attacker-controlled subscription server could direct icon fetches at the
+// user's LAN (router admin panels, internal services) and use response
+// timings / sizes as an oracle.
+func isPrivateOrLoopback(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
+		ip.IsMulticast() || ip.IsUnspecified() || ip.IsPrivate() {
+		return true
+	}
+	// IsPrivate() handles 10/8, 172.16/12, 192.168/16, fc00::/7. Explicitly
+	// also block CGNAT (100.64.0.0/10) and broadcast.
+	if v4 := ip.To4(); v4 != nil {
+		if v4[0] == 100 && (v4[1]&0xC0) == 64 {
+			return true
+		}
+		if v4.Equal(net.IPv4bcast) {
+			return true
+		}
+	}
+	return false
+}
+
+// safeImageDialer returns a net.Dialer whose Control hook blocks connections
+// to private/loopback addresses. Using Control (instead of pre-resolving)
+// closes the DNS-rebinding race where a hostile DNS returns a public IP to
+// our LookupHost and a private IP to the actual dial.
+func safeImageDialer() *net.Dialer {
+	return &net.Dialer{
+		Timeout: 6 * time.Second,
+		Control: func(network, address string, _ syscall.RawConn) error {
+			host, _, err := net.SplitHostPort(address)
+			if err != nil {
+				return fmt.Errorf("icon fetch: bad address %q", address)
+			}
+			ip := net.ParseIP(host)
+			if ip == nil {
+				return fmt.Errorf("icon fetch: cannot parse %q", host)
+			}
+			if isPrivateOrLoopback(ip) {
+				return fmt.Errorf("icon fetch: blocked private/loopback target %s", ip)
+			}
+			return nil
+		},
+	}
+}
+
 func inlineSmallImageFromURL(client *http.Client, imageURL string, referer string) string {
 	if imageURL == "" {
 		return ""
 	}
 	low := strings.ToLower(imageURL)
-	if !strings.HasPrefix(low, "http://") && !strings.HasPrefix(low, "https://") {
+	// HTTPS-only: subscription icon URLs come from server-controlled headers
+	// or HTML, so a hostile server could embed an http:// URL and observe
+	// our request unencrypted. Refusing http here costs nothing — almost
+	// every modern site serves icons over HTTPS.
+	if !strings.HasPrefix(low, "https://") {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
@@ -1105,10 +1253,22 @@ func inlineSmallImageFromURL(client *http.Client, imageURL string, referer strin
 	}
 	req.Header.Set("User-Agent", subscriptionPageUserAgent)
 	req.Header.Set("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-	if strings.TrimSpace(referer) != "" {
-		req.Header.Set("Referer", referer)
+	// Referer reveals the subscription URL (often containing a token) to
+	// every third-party host that serves an icon. Only attach it when the
+	// icon host matches the subscription host — that's the legitimate
+	// "icon hosted by the provider" case.
+	if rh := sameHostReferer(referer, imageURL); rh != "" {
+		req.Header.Set("Referer", rh)
 	}
-	resp, err := client.Do(req)
+	// Sandbox the connection through our SSRF-aware dialer. The default
+	// client passed in shares the cookie jar but we override the transport.
+	safeClient := *client
+	safeClient.Transport = &http.Transport{
+		DialContext:           safeImageDialer().DialContext,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ResponseHeaderTimeout: 6 * time.Second,
+	}
+	resp, err := safeClient.Do(req)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		if resp != nil {
 			resp.Body.Close()
@@ -1283,13 +1443,36 @@ func normalizeSubscriptionURL(subURL string) string {
 	return subURL
 }
 
-func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int64, int64, int64, int64, string, string, error) {
+// ErrInsecureSubscription is returned by fetchSubscriptionFromURL when the
+// URL uses plaintext http:// and the caller did not pass allowInsecure=true.
+// The frontend dispatches on this string to show a "this subscription URL
+// is unencrypted, continue anyway?" confirmation.
+var ErrInsecureSubscription = errors.New("subscription URL uses plaintext HTTP — credentials and HWID would travel unencrypted")
+
+// isInsecureSubURL reports whether subURL would expose the request over
+// plaintext. Non-http(s) URLs (e.g. malformed input) are treated as
+// insecure too — they'll fail downstream anyway, but the conservative
+// answer avoids ever sending HWID to a non-https endpoint by mistake.
+func isInsecureSubURL(subURL string) bool {
+	low := strings.ToLower(strings.TrimSpace(subURL))
+	return !strings.HasPrefix(low, "https://")
+}
+
+// fetchSubscriptionFromURL fetches and parses a subscription. allowInsecure
+// must be true to accept http:// URLs; when set, we also suppress the
+// x-hwid header because sending a stable device identifier in plaintext is
+// exactly the leak the warning is opted into.
+func (a *App) fetchSubscriptionFromURL(subURL string, allowInsecure bool) ([]config.ProxyEntry, int64, int64, int64, int64, string, string, error) {
 	if resolved, err := resolveEncryptedSubscriptionURL(subURL); err != nil {
 		return nil, 0, 0, 0, 0, "", "", err
 	} else if resolved != "" {
 		subURL = resolved
 	}
 	subURL = normalizeSubscriptionURL(subURL)
+	insecure := isInsecureSubURL(subURL)
+	if insecure && !allowInsecure {
+		return nil, 0, 0, 0, 0, "", "", ErrInsecureSubscription
+	}
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Timeout: 15 * time.Second, Jar: jar}
 
@@ -1299,8 +1482,14 @@ func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int6
 			return nil, 0, 0, 0, 0, "", "", false, fmt.Errorf("creating subscription request: %w", err)
 		}
 		req.Header.Set("User-Agent", userAgent)
-		if hwid := a.subscriptionHWID(); hwid != "" {
-			req.Header.Set("x-hwid", hwid)
+		// Only attach HWID to HTTPS requests. On plaintext http:// the HWID
+		// would be sniffable end-to-end and would link the user's device
+		// across every network hop and intermediary — the privacy cost
+		// outweighs any HWID-based device-limit check the provider does.
+		if !insecure {
+			if hwid := a.subscriptionHWID(subURL); hwid != "" {
+				req.Header.Set("x-hwid", hwid)
+			}
 		}
 
 		resp, err := client.Do(req)
@@ -1482,17 +1671,23 @@ func (a *App) fetchSubscriptionFromURL(subURL string) ([]config.ProxyEntry, int6
 	return entries, up, down, tot, exp, iconURL, profileTitle, nil
 }
 
-func (a *App) FetchSubscription(subURL string) ([]config.ProxyEntry, error) {
-	entries, _, _, _, _, _, _, err := a.fetchSubscriptionFromURL(subURL)
+// FetchSubscription performs a one-off subscription fetch (no persistence).
+// allowInsecure must be true for plaintext http:// URLs — see
+// ErrInsecureSubscription. The frontend should call this with false first
+// and re-call with true only after surfacing the warning to the user.
+func (a *App) FetchSubscription(subURL string, allowInsecure bool) ([]config.ProxyEntry, error) {
+	entries, _, _, _, _, _, _, err := a.fetchSubscriptionFromURL(subURL, allowInsecure)
 	return entries, err
 }
 
+// ParseSubscriptionText accepts pasted content. When the paste resolves to
+// a URL (via RVSUB1 decryption), we still enforce https:// on the resolved
+// target — there's no UI-side prompt for paste flows, so plaintext URLs are
+// refused outright.
 func (a *App) ParseSubscriptionText(text string) ([]config.ProxyEntry, error) {
-	// If the input is an RVSUB1-encrypted single-line URL, fetch it instead of
-	// trying to parse the URL as if it were a list of proxy URIs.
 	if proxy.IsEncryptedSubscription(text) {
 		if resolved, err := resolveEncryptedSubscriptionURL(text); err == nil && resolved != "" {
-			entries, _, _, _, _, _, _, ferr := a.fetchSubscriptionFromURL(resolved)
+			entries, _, _, _, _, _, _, ferr := a.fetchSubscriptionFromURL(resolved, false)
 			return entries, ferr
 		}
 	}
@@ -1516,7 +1711,11 @@ func (a *App) RefreshSubscription(subID string) ([]config.ProxyEntry, error) {
 		return nil, fmt.Errorf("subscription %s not found", subID)
 	}
 
-	entries, up, down, tot, exp, iconURL, profileTitle, err := a.fetchSubscriptionFromURL(sub.URL)
+	// Replay the consent the user gave when adding this subscription. If
+	// they accepted plaintext at AddSubscription time, refresh keeps using
+	// http; if not, an http URL refresh will fail with ErrInsecureSubscription
+	// and the UI must re-prompt before retrying.
+	entries, up, down, tot, exp, iconURL, profileTitle, err := a.fetchSubscriptionFromURL(sub.URL, sub.AllowInsecure)
 	if err != nil {
 		return nil, fmt.Errorf("refreshing subscription %s: %w", sub.Name, err)
 	}
@@ -1577,7 +1776,11 @@ func (a *App) RefreshSubscription(subID string) ([]config.ProxyEntry, error) {
 	return entries, nil
 }
 
-func (a *App) AddSubscription(name, subURL string) ([]config.ProxyEntry, error) {
+// AddSubscription stores a new subscription. allowInsecure=true must be
+// passed explicitly for http:// URLs after the user has confirmed the
+// warning. The consent is persisted on the Subscription record so
+// RefreshSubscription doesn't need to re-prompt.
+func (a *App) AddSubscription(name, subURL string, allowInsecure bool) ([]config.ProxyEntry, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("config manager not initialized")
 	}
@@ -1611,7 +1814,7 @@ func (a *App) AddSubscription(name, subURL string) ([]config.ProxyEntry, error) 
 		}
 	}
 
-	entries, up, down, tot, exp, iconURL, profileTitle, err := a.fetchSubscriptionFromURL(subURL)
+	entries, up, down, tot, exp, iconURL, profileTitle, err := a.fetchSubscriptionFromURL(subURL, allowInsecure)
 	if err != nil {
 		return nil, err
 	}
@@ -1631,6 +1834,9 @@ func (a *App) AddSubscription(name, subURL string) ([]config.ProxyEntry, error) 
 		TrafficTotal:    tot,
 		ExpireUnix:      exp,
 		IconURL:         iconURL,
+		// Only mark as allow-insecure when the URL actually is plaintext —
+		// no need to flag https:// subscriptions, which would be misleading.
+		AllowInsecure: allowInsecure && isInsecureSubURL(subURL),
 	}
 
 	for i := range entries {
@@ -1911,7 +2117,7 @@ func (a *App) initSmartBlockedDomains(userDataPath, rootDir string) {
 		filepath.Join(rootDir, "list-general.txt"),
 		filepath.Join(rootDir, "list-google.txt"),
 	}
-	a.smartProvider = proxy.NewHTTPBlockedListProvider()
+	a.smartProvider = proxy.NewHTTPBlockedListProvider(userDataPath)
 	result := proxy.ResolveBlockedDomains(a.ctx, a.smartProvider, cachePath, localPaths...)
 	router := a.proxy.GetRouter()
 	if router != nil && len(result.Domains) > 0 {

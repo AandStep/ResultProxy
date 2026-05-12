@@ -56,25 +56,32 @@ type Subscription struct {
 	Name      string `json:"name"`
 	URL       string `json:"url"`
 	UpdatedAt string `json:"updatedAt,omitempty"`
-	
+
 	TrafficUpload   int64 `json:"trafficUpload,omitempty"`
 	TrafficDownload int64 `json:"trafficDownload,omitempty"`
-	TrafficTotal    int64 `json:"trafficTotal,omitempty"` 
-	ExpireUnix      int64 `json:"expireUnix,omitempty"`     
-	
+	TrafficTotal    int64 `json:"trafficTotal,omitempty"`
+	ExpireUnix      int64 `json:"expireUnix,omitempty"`
+
 	IconURL string `json:"iconUrl,omitempty"`
+
+	// AllowInsecure records that the user explicitly accepted fetching this
+	// subscription over plaintext HTTP. We persist the consent so subsequent
+	// RefreshSubscription calls don't re-prompt. When true, the fetcher also
+	// suppresses the x-hwid header — sending a stable device identifier in
+	// plaintext is exactly the leak this flag is opted into.
+	AllowInsecure bool `json:"allowInsecure,omitempty"`
 }
 
 
 type AppSettings struct {
-	Autostart           bool   `json:"autostart"`
-	KillSwitch          bool   `json:"killswitch"`
-	AdBlock             bool   `json:"adblock"`
-	Mode                string   `json:"mode"`                           
-	Language            string   `json:"language"`                       
-	Theme               string   `json:"theme"`                          
-	LastSelectedProxyID string   `json:"lastSelectedProxyId,omitempty"`  
-	LocalPort           int      `json:"localPort,omitempty"`            
+	Autostart           bool     `json:"autostart"`
+	KillSwitch          bool     `json:"killswitch"`
+	AdBlock             bool     `json:"adblock"`
+	Mode                string   `json:"mode"`
+	Language            string   `json:"language"`
+	Theme               string   `json:"theme"`
+	LastSelectedProxyID string   `json:"lastSelectedProxyId,omitempty"`
+	LocalPort           int      `json:"localPort,omitempty"`
 	ListenLAN           bool     `json:"listenLan,omitempty"`
 	DNSServers          []string `json:"dnsServers,omitempty"`
 	TunIPv4             string   `json:"tunIpv4,omitempty"`
@@ -140,6 +147,23 @@ func (m *Manager) Init(userDataPath string) error {
 
 	if err := m.loadLocked(); err != nil {
 		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Migration handshake with CryptoService: if loadLocked succeeded via
+	// the legacy key, the crypto layer flagged needsReencrypt. We re-save
+	// the now-decrypted cache under the new per-install-salt key, then
+	// clear the flag so subsequent (already-migrated) loads don't trigger
+	// another rewrite. SaveConfig takes its own lock — drop ours first.
+	needsMigration := m.crypto != nil && m.crypto.NeedsReencrypt()
+	if needsMigration {
+		current := m.cache
+		m.mu.Unlock()
+		err := m.SaveConfig(current)
+		m.mu.Lock()
+		if err != nil {
+			return fmt.Errorf("re-encrypting config after key migration: %w", err)
+		}
+		m.crypto.ClearReencryptFlag()
 	}
 	return nil
 }

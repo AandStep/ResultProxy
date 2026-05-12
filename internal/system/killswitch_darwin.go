@@ -51,15 +51,15 @@ func NewKillSwitch() KillSwitch {
 	return &DarwinKillSwitch{}
 }
 
-func (k *DarwinKillSwitch) Enable(proxyAddr string) error {
+func (k *DarwinKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.enabled {
 		return nil
 	}
 
-	rules := buildPFRules(extractValidIP(proxyAddr))
-	if err := os.WriteFile(pfRulesPath, []byte(rules), 0o644); err != nil {
+	rules := buildPFRules(resolveProxyIPs(proxyAddr), extractDNSIPs(dnsServers))
+	if err := os.WriteFile(pfRulesPath, []byte(rules), 0o600); err != nil {
 		return fmt.Errorf("write pf rules: %w", err)
 	}
 
@@ -109,7 +109,7 @@ func extractValidIP(addr string) string {
 	return host
 }
 
-func buildPFRules(proxyIP string) string {
+func buildPFRules(proxyIPs []string, dnsIPs []string) string {
 	var b strings.Builder
 	b.WriteString("# ResultV kill switch — replaced on each Enable, removed on Disable\n")
 	b.WriteString("set block-policy drop\n")
@@ -120,8 +120,15 @@ func buildPFRules(proxyIP string) string {
 	b.WriteString("pass out from any to 172.16.0.0/12\n")
 	b.WriteString("pass out from any to 192.168.0.0/16\n")
 	b.WriteString("pass out from any to 169.254.0.0/16\n")
-	b.WriteString("pass out proto udp from any to any port 53\n")
-	if proxyIP != "" {
+	// Per-resolver DNS allow rules. The old "pass out ... to any port 53"
+	// allowed every DNS query out, defeating the kill switch on a tunnel
+	// drop. Only the configured (or fallback public) resolvers are now
+	// reachable on port 53.
+	for _, ip := range dnsIPs {
+		b.WriteString(fmt.Sprintf("pass out proto udp from any to %s port 53\n", ip))
+		b.WriteString(fmt.Sprintf("pass out proto tcp from any to %s port 53\n", ip))
+	}
+	for _, proxyIP := range proxyIPs {
 		b.WriteString(fmt.Sprintf("pass out from any to %s\n", proxyIP))
 	}
 	return b.String()

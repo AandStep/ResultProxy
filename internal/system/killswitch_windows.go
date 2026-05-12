@@ -54,6 +54,15 @@ type WindowsKillSwitch struct {
 	mu      sync.Mutex
 	enabled bool
 	isAdmin bool
+	// dnsRuleCount tracks how many _AllowDNS_<i> rules were installed in the
+	// last Enable() so Disable() can clean them up. Without this, narrowing
+	// the DNS allow list (we used to have a single _AllowDNS) would leak
+	// rules across enable/disable cycles.
+	dnsRuleCount int
+	// proxyRuleCount tracks how many _AllowProxy[_<i>] rules were installed
+	// — multiple when the proxy host resolved to several A records. Disable
+	// uses this to clean up trailing rules.
+	proxyRuleCount int
 }
 
 
@@ -65,7 +74,7 @@ func NewKillSwitch() KillSwitch {
 
 
 
-func (ks *WindowsKillSwitch) Enable(proxyAddr string) error {
+func (ks *WindowsKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 	ks.mu.Lock()
 	defer ks.mu.Unlock()
 
@@ -74,7 +83,7 @@ func (ks *WindowsKillSwitch) Enable(proxyAddr string) error {
 	}
 
 	if ks.isAdmin {
-		if err := ks.enableFirewall(proxyAddr); err != nil {
+		if err := ks.enableFirewall(proxyAddr, extractDNSIPs(dnsServers)); err != nil {
 			return fmt.Errorf("enabling firewall kill switch: %w", err)
 		}
 	} else {
@@ -111,8 +120,8 @@ func (ks *WindowsKillSwitch) IsEnabled() bool {
 
 
 
-func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string) error {
-	
+func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string, dnsIPs []string) error {
+
 	_ = ks.disableFirewall()
 
 	
@@ -129,20 +138,31 @@ func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string) error {
 	}
 
 	
-	if proxyIP := extractValidIP(proxyAddr); proxyIP != "" {
-		allowProxyCmd := command("netsh", "advfirewall", "firewall", "add", "rule",
-			"name="+firewallRuleName+"_AllowProxy",
+	// Allow the proxy server. We resolve hostnames here so CDN-fronted
+	// proxies with multiple A records (or proxies addressed by domain) get
+	// every IP in the allow list. Without this, the connection request
+	// would itself be blocked because Windows enforces the rules before
+	// the proxy connect attempt.
+	proxyIPs := resolveProxyIPs(proxyAddr)
+	for i, ip := range proxyIPs {
+		ruleName := firewallRuleName + "_AllowProxy"
+		if i > 0 {
+			ruleName = fmt.Sprintf("%s_AllowProxy_%d", firewallRuleName, i)
+		}
+		cmd := command("netsh", "advfirewall", "firewall", "add", "rule",
+			"name="+ruleName,
 			"dir=out",
 			"action=allow",
 			"enable=yes",
 			"profile=any",
 			"protocol=any",
-			"remoteip="+proxyIP,
+			"remoteip="+ip,
 		)
-		if out, err := allowProxyCmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("adding allow proxy rule: %s: %w", string(out), err)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("adding allow proxy rule (%s): %s: %w", ip, string(out), err)
 		}
 	}
+	ks.proxyRuleCount = len(proxyIPs)
 
 	
 	allowLocalCmd := command("netsh", "advfirewall", "firewall", "add", "rule",
@@ -158,19 +178,32 @@ func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string) error {
 		return fmt.Errorf("adding allow local rule: %s: %w", string(out), err)
 	}
 
-	
-	allowDNSCmd := command("netsh", "advfirewall", "firewall", "add", "rule",
-		"name="+firewallRuleName+"_AllowDNS",
-		"dir=out",
-		"action=allow",
-		"enable=yes",
-		"profile=any",
-		"protocol=udp",
-		"remoteport=53",
-	)
-	if out, err := allowDNSCmd.CombinedOutput(); err != nil {
-		
-		_ = out
+	// Narrow DNS: previously this allowed udp/53 to ANY remote, which is the
+	// classic kill-switch DNS leak — when the tunnel drops the OS resolver
+	// still queried ISP DNS in plaintext. Now we allow port 53 (udp+tcp) only
+	// to the explicit resolver IPs from settings. extractDNSIPs guarantees at
+	// least one fallback IP (1.1.1.1) so users without custom DNS still have
+	// working name resolution under the kill switch.
+	ks.dnsRuleCount = 0
+	for i, dnsIP := range dnsIPs {
+		for _, proto := range []string{"udp", "tcp"} {
+			cmd := command("netsh", "advfirewall", "firewall", "add", "rule",
+				fmt.Sprintf("name=%s_AllowDNS_%d_%s", firewallRuleName, i, proto),
+				"dir=out",
+				"action=allow",
+				"enable=yes",
+				"profile=any",
+				"protocol="+proto,
+				"remoteport=53",
+				"remoteip="+dnsIP,
+			)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				// Best-effort: a single failed DNS rule shouldn't break the
+				// whole kill switch (the block-all rule is the safety net).
+				_ = out
+			}
+		}
+		ks.dnsRuleCount = i + 1
 	}
 
 	return nil
@@ -199,14 +232,38 @@ func extractValidIP(addr string) string {
 
 
 func (ks *WindowsKillSwitch) disableFirewall() error {
-	
-	suffixes := []string{"_BlockAll", "_AllowProxy", "_AllowLocal", "_AllowDNS"}
+	suffixes := []string{"_BlockAll", "_AllowProxy", "_AllowLocal"}
 	for _, suffix := range suffixes {
 		cmd := command("netsh", "advfirewall", "firewall", "delete", "rule",
 			"name="+firewallRuleName+suffix,
 		)
-		_ = cmd.Run() 
+		_ = cmd.Run()
 	}
+	// Clean up _AllowProxy_<i> rules (i >= 1) from a previous Enable() that
+	// had multiple proxy IPs. We sweep up to max(stored count, 8) to handle
+	// builds where the count wasn't tracked yet.
+	proxyCount := max(ks.proxyRuleCount, 8)
+	for i := 1; i < proxyCount; i++ {
+		_ = command("netsh", "advfirewall", "firewall", "delete", "rule",
+			fmt.Sprintf("name=%s_AllowProxy_%d", firewallRuleName, i),
+		).Run()
+	}
+	ks.proxyRuleCount = 0
+	// Drop legacy single-rule name in case we are disabling rules installed by
+	// an older build. New per-IP rules are named _AllowDNS_<i>_<proto>.
+	_ = command("netsh", "advfirewall", "firewall", "delete", "rule",
+		"name="+firewallRuleName+"_AllowDNS",
+	).Run()
+	// Clean up _AllowDNS_<i>_<proto> rules from the previous Enable().
+	count := max(ks.dnsRuleCount, len(fallbackDNS))
+	for i := 0; i < count; i++ {
+		for _, proto := range []string{"udp", "tcp"} {
+			_ = command("netsh", "advfirewall", "firewall", "delete", "rule",
+				fmt.Sprintf("name=%s_AllowDNS_%d_%s", firewallRuleName, i, proto),
+			).Run()
+		}
+	}
+	ks.dnsRuleCount = 0
 	return nil
 }
 

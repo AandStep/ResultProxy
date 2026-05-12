@@ -19,6 +19,30 @@ import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DownloadCloud, X } from "lucide-react";
 
+// Hosts allowed to serve an update download. update.json is fetched from
+// raw.githubusercontent.com, so a compromised GitHub branch or a MITM with
+// rogue CA could rewrite downloadUrl to anywhere. Pinning the navigation
+// target limits the blast radius — even if update.json says
+// "downloadUrl": "javascript:evil()" or "http://attacker/installer.exe",
+// nothing happens.
+const ALLOWED_DOWNLOAD_HOSTS = new Set([
+  "result-proxy.ru",
+  "www.result-proxy.ru",
+  "github.com",
+]);
+
+function isSafeDownloadURL(raw) {
+  if (!raw || typeof raw !== "string") return false;
+  let u;
+  try {
+    u = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== "https:") return false;
+  return ALLOWED_DOWNLOAD_HOSTS.has(u.hostname.toLowerCase());
+}
+
 const UpdateNotificationModal = ({
   currentVersion,
   latestVersion,
@@ -68,10 +92,18 @@ const UpdateNotificationModal = ({
 
           <button
             onClick={() => {
-              if (downloadUrl) {
-                window.open(downloadUrl, "_blank");
+              if (isSafeDownloadURL(downloadUrl)) {
+                window.open(downloadUrl, "_blank", "noopener,noreferrer");
               } else {
-                
+                // downloadUrl was missing or pointed outside the allowed
+                // host list — fall back to the in-app downloads modal so
+                // the user is never redirected to an arbitrary URL.
+                if (downloadUrl) {
+                  console.warn(
+                    "Update downloadUrl rejected by host allow list:",
+                    downloadUrl,
+                  );
+                }
                 document.dispatchEvent(new CustomEvent("open-download-modal"));
               }
               onClose();
