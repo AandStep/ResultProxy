@@ -10,30 +10,6 @@
   },
   "downloadUrl": "https://result-proxy.ru/",
   "platforms": {
-    "windows-amd64-portable": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV.exe",
-      "sha256": "6e7f10fdb8658ae0fc5b405c8d1f538a6e6fb0a5e34c1f7bf92b9a3de0338ffd",
-      "size": 46001152
-    },
-    "windows-amd64-installer": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV-amd64-installer.exe",
-      "sha256": "4aee190809b3c281310221e34f65cc73a7491b0ef9bde7e6072fa426ba8c37f3",
-      "size": 24190152
-    },
-    "darwin-universal": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV.dmg",
-      "sha256": "bf8e6a237160d3159381ce3f00294d63a6e2e0851484fbf0dfe138d1ac0fc9d3",
-      "size": 39596292
-    },
-    "linux-amd64-appimage": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV-3.2.0-dev.1-x86_64.AppImage",
-      "sha256": "e6909879bdde7c7418cf08961c35384ab90969b3d43ab52dfe74fd51835b7e7b",
-      "size": 87570936
-    },
-    "linux-amd64-deb": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/resultv_3.2.0~dev.1_amd64.deb",
-      "sha256": "512d981af444ff368a386dcaf29003899d2f3753c3262d6ed3414af1ef48a061",
-      "size": 18975274
-    }
+   
   }
 }
