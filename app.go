@@ -48,6 +48,7 @@ import (
 	"resultproxy-wails/internal/logger"
 	"resultproxy-wails/internal/proxy"
 	"resultproxy-wails/internal/system"
+	"resultproxy-wails/internal/updater"
 )
 
 var stableHWIDProvider = config.StableHardwareID
@@ -101,6 +102,9 @@ type App struct {
 
 	deepLinkMu      sync.Mutex
 	pendingDeepLink string
+
+	updateMu     sync.Mutex
+	updateCancel context.CancelFunc
 }
 
 func NewApp() *App {
@@ -2163,4 +2167,101 @@ func (a *App) startSmartBlockedRefresh(cachePath string) {
 			}
 		}
 	}()
+}
+
+// StartUpdate begins the in-app update: check manifest → download → verify → install.
+// Progress and status are emitted as Wails events:
+//   - update:progress  { downloaded, total, speedBps }
+//   - update:verifying (no payload)
+//   - update:verified  (no payload)
+//   - update:installing (no payload)
+//   - update:failed    { stage, message }
+//
+// If another update is already in progress this call is a no-op.
+func (a *App) StartUpdate() {
+	a.updateMu.Lock()
+	if a.updateCancel != nil {
+		a.updateMu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	a.updateCancel = cancel
+	a.updateMu.Unlock()
+
+	go func() {
+		defer func() {
+			a.updateMu.Lock()
+			a.updateCancel = nil
+			a.updateMu.Unlock()
+		}()
+
+		emit := func(event string, payload interface{}) {
+			if a.ctx != nil {
+				wailsRuntime.EventsEmit(a.ctx, event, payload)
+			}
+		}
+		failEvent := func(stage, message string) {
+			emit("update:failed", map[string]interface{}{
+				"stage": stage, "message": message,
+			})
+		}
+
+		u := updater.New()
+
+		manifest, err := u.Check(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			failEvent("check", err.Error())
+			return
+		}
+
+		asset := manifest.ResolveAsset()
+		if asset == nil {
+			failEvent("check", "no in-app update available for this platform")
+			return
+		}
+
+		path, err := u.Download(ctx, asset, func(downloaded, total int64, speedBps float64) {
+			emit("update:progress", map[string]interface{}{
+				"downloaded": downloaded,
+				"total":      total,
+				"speedBps":   speedBps,
+			})
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				failEvent("download", "download cancelled")
+				return
+			}
+			failEvent("download", err.Error())
+			return
+		}
+
+		emit("update:verifying", nil)
+
+		if err := u.Verify(path, asset.SHA256); err != nil {
+			failEvent("verify", err.Error())
+			return
+		}
+
+		emit("update:verified", nil)
+		emit("update:installing", nil)
+
+		if err := u.Install(path); err != nil {
+			failEvent("install", err.Error())
+		}
+		// Install calls os.Exit on success — execution never reaches here.
+	}()
+}
+
+// CancelUpdate cancels an in-progress update download.
+// Has no effect if no update is running.
+func (a *App) CancelUpdate() {
+	a.updateMu.Lock()
+	defer a.updateMu.Unlock()
+	if a.updateCancel != nil {
+		a.updateCancel()
+	}
 }

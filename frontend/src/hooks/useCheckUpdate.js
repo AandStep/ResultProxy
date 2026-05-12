@@ -43,6 +43,7 @@ async function resolveLocalVersion() {
 export const useCheckUpdate = () => {
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [latestVersionData, setLatestVersionData] = useState(null);
+    const [hasPlatformAsset, setHasPlatformAsset] = useState(false);
     const [currentVersion, setCurrentVersion] = useState(() =>
         typeof __APP_VERSION__ !== "undefined" ? String(__APP_VERSION__) : "",
     );
@@ -61,6 +62,13 @@ export const useCheckUpdate = () => {
 
                 setLatestVersionData(remoteData);
 
+                // True when the manifest has at least one platform asset filled in.
+                // The Go backend decides which specific asset to use at download time.
+                const platformsPopulated =
+                    remoteData.platforms != null &&
+                    Object.values(remoteData.platforms).some((a) => a?.url && a?.sha256);
+                setHasPlatformAsset(platformsPopulated);
+
                 if (localVersion && remoteData.version) {
                     const isNewer =
                         compareVersions(localVersion, remoteData.version) === -1;
@@ -76,5 +84,5 @@ export const useCheckUpdate = () => {
         checkUpdate();
     }, []);
 
-    return { updateAvailable, latestVersionData, currentVersion, loading };
+    return { updateAvailable, latestVersionData, currentVersion, loading, hasPlatformAsset };
 };

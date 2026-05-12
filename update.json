@@ -8,5 +8,6 @@
     "ru": "Улучшения UI и исправление ошибок.",
     "en": "UI improvements and bug fixes."
   },
-  "downloadUrl": "https://result-proxy.ru/"
+  "downloadUrl": "https://result-proxy.ru/",
+  "platforms": {}
 }

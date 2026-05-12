@@ -29,6 +29,9 @@ LDFLAGS=""
 if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
   LDFLAGS="-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=${SUBSCRIPTION_ENCRYPT_KEY}"
 fi
+if [ -n "${MANIFEST_URL_OVERRIDE:-}" ]; then
+  LDFLAGS="${LDFLAGS} -X resultproxy-wails/internal/updater.ManifestURLOverride=${MANIFEST_URL_OVERRIDE}"
+fi
 
 echo "==> wails build (darwin/universal)"
 if [ -n "$LDFLAGS" ]; then

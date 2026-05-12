@@ -48,6 +48,8 @@ import {
   RefreshSubscription,
   AddSubscription,
   DeleteSubscription,
+  StartUpdate,
+  CancelUpdate,
 } from '../../wailsjs/go/main/App';
 
 export const wailsAPI = {
@@ -364,6 +366,23 @@ export const wailsAPI = {
     } catch (e) {
       console.error("wailsAPI.deleteSubscription error:", e);
       throw e;
+    }
+  },
+
+  startUpdate: async () => {
+    try {
+      await StartUpdate();
+    } catch (e) {
+      console.error("wailsAPI.startUpdate error:", e);
+      throw e;
+    }
+  },
+
+  cancelUpdate: async () => {
+    try {
+      await CancelUpdate();
+    } catch (e) {
+      console.error("wailsAPI.cancelUpdate error:", e);
     }
   },
 };

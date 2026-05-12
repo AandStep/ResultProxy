@@ -77,12 +77,22 @@ jobs:
         shell: pwsh
         env:
           SUBSCRIPTION_ENCRYPT_KEY: ${{ secrets.SUBSCRIPTION_ENCRYPT_KEY }}
+          # For pre-release tags (containing '-') point the updater at the dev branch
+          # so test builds don't check the production manifest.
+          MANIFEST_URL_OVERRIDE: ${{ contains(github.ref_name, '-') && 'https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json' || '' }}
         run: |
           $key = $env:SUBSCRIPTION_ENCRYPT_KEY
+          $ldflags = ""
           if ($key) {
-            wails build -clean -nsis -platform windows/amd64 -ldflags "-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=$key"
+            $ldflags = "-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=$key"
+          }
+          $manifestOverride = $env:MANIFEST_URL_OVERRIDE
+          if ($manifestOverride) {
+            $ldflags = "$ldflags -X resultproxy-wails/internal/updater.ManifestURLOverride=$manifestOverride".Trim()
+          }
+          if ($ldflags) {
+            wails build -clean -nsis -platform windows/amd64 -ldflags $ldflags
           } else {
-            Write-Warning "Secret SUBSCRIPTION_ENCRYPT_KEY not set — building without decryption key"
             wails build -clean -nsis -platform windows/amd64
           }
 
@@ -157,6 +167,7 @@ jobs:
           APPLE_NOTARY_APPLE_ID: ${{ secrets.APPLE_NOTARY_APPLE_ID }}
           APPLE_NOTARY_TEAM_ID: ${{ secrets.APPLE_NOTARY_TEAM_ID }}
           APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
+          MANIFEST_URL_OVERRIDE: ${{ contains(github.ref_name, '-') && 'https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json' || '' }}
         run: |
           chmod +x build-macos.sh
           ./build-macos.sh
@@ -215,6 +226,7 @@ jobs:
       - name: Build Linux artifacts
         env:
           SUBSCRIPTION_ENCRYPT_KEY: ${{ secrets.SUBSCRIPTION_ENCRYPT_KEY }}
+          MANIFEST_URL_OVERRIDE: ${{ contains(github.ref_name, '-') && 'https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json' || '' }}
         run: |
           chmod +x build-linux.sh
           ./build-linux.sh
@@ -301,6 +313,84 @@ jobs:
           body_path: RELEASE_BODY.txt
           files: release-assets/*
           draft: false
-          prerelease: false
+          # Tags with a hyphen (e.g. v3.2.0-dev.1) are pre-releases.
+          # Pre-releases are visible on GitHub but not shown as "Latest release",
+          # so production auto-update is unaffected.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute sha256 and update update.json platforms
+        run: |
+          cat > update_manifest.cjs <<'NODE_EOF'
+          const fs   = require('fs');
+          const path = require('path');
+          const crypto = require('crypto');
+
+          const tag     = process.env.GITHUB_REF_NAME;          // e.g. "v3.2.0"
+          const version = tag.replace(/^v/, '');
+          const repo    = process.env.GITHUB_REPOSITORY;        // "AandStep/ResultV"
+          const baseURL = `https://github.com/${repo}/releases/download/${tag}`;
+          const dir     = 'release-assets';
+
+          function sha256File(p) {
+            return crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+          }
+
+          const files = fs.readdirSync(dir);
+
+          const portableFile   = files.find(f => /^ResultV.*\.exe$/i.test(f) && !/installer/i.test(f) && !/setup/i.test(f));
+          const installerFile  = files.find(f => /installer.*\.exe$/i.test(f) || /setup.*\.exe$/i.test(f));
+          const dmgFile        = files.find(f => /\.dmg$/i.test(f));
+          const appimageFile   = files.find(f => /\.AppImage$/i.test(f));
+          const debFile        = files.find(f => /\.deb$/i.test(f));
+
+          const update = JSON.parse(fs.readFileSync('update.json', 'utf8'));
+          update.version   = version;
+          update.platforms = {};
+
+          function addPlatform(key, filename) {
+            if (!filename) return;
+            const p = path.join(dir, filename);
+            if (!fs.existsSync(p)) return;
+            const stat = fs.statSync(p);
+            update.platforms[key] = {
+              url:    `${baseURL}/${filename}`,
+              sha256: sha256File(p),
+              size:   stat.size,
+            };
+            console.log(`[${key}] ${filename} sha256=${update.platforms[key].sha256} size=${stat.size}`);
+          }
+
+          addPlatform('windows-amd64-portable',  portableFile);
+          addPlatform('windows-amd64-installer', installerFile);
+          addPlatform('darwin-universal',         dmgFile);
+          addPlatform('linux-amd64-appimage',     appimageFile);
+          addPlatform('linux-amd64-deb',          debFile);
+
+          fs.writeFileSync('update.json', JSON.stringify(update, null, 2) + '\n');
+          console.log('update.json written with platforms:', Object.keys(update.platforms).join(', ') || '(none)');
+          NODE_EOF
+          node update_manifest.cjs
+
+      # For stable releases (no hyphen): commit update.json to main so all users
+      # receive the update notification. For pre-releases (e.g. v3.2.0-dev.1):
+      # commit to dev branch only — production users are unaffected.
+      - name: Commit updated update.json
+        run: |
+          # Choose target branch based on whether this is a pre-release tag.
+          if [[ "${{ github.ref_name }}" == *"-"* ]]; then
+            TARGET_BRANCH="dev"
+          else
+            TARGET_BRANCH="main"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$TARGET_BRANCH"
+          git checkout "$TARGET_BRANCH"
+          git add update.json
+          git diff --cached --quiet || \
+            git commit -m "chore: update update.json platforms for ${{ github.ref_name }} [skip ci]"
+          git push origin "$TARGET_BRANCH"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -21,6 +21,9 @@ LDFLAGS=""
 if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
   LDFLAGS="-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=${SUBSCRIPTION_ENCRYPT_KEY}"
 fi
+if [ -n "${MANIFEST_URL_OVERRIDE:-}" ]; then
+  LDFLAGS="${LDFLAGS} -X resultproxy-wails/internal/updater.ManifestURLOverride=${MANIFEST_URL_OVERRIDE}"
+fi
 
 echo "==> wails build (linux/amd64) version=$VERSION"
 # webkit2_41 selects libwebkit2gtk-4.1 (Ubuntu 22.04+/24.04, Debian 12+).

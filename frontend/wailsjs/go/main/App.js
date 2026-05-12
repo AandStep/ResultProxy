@@ -149,3 +149,11 @@ export function ToggleKillSwitch(arg1) {
 export function UpdateRules(arg1) {
   return window['go']['main']['App']['UpdateRules'](arg1);
 }
+
+export function StartUpdate() {
+  return window['go']['main']['App']['StartUpdate']();
+}
+
+export function CancelUpdate() {
+  return window['go']['main']['App']['CancelUpdate']();
+}
