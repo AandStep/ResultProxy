@@ -27,7 +27,18 @@ jobs:
 
       - name: Install Linux build deps
         if: matrix.os == 'ubuntu-latest'
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
+          set -eux
+          sudo find /etc/apt \( -name '*.sources' -o -name '*.list' -o -name '*.sources.list' \) \
+            -type f -exec sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' {} +
+          sudo tee /etc/apt/apt.conf.d/99-ci-apt >/dev/null <<'EOF'
+          Acquire::Retries "5";
+          Acquire::http::Timeout "120";
+          Acquire::https::Timeout "120";
+          Dpkg::Use-Pty "0";
+          EOF
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config \
