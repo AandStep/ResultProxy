@@ -126,6 +126,33 @@ func (a *App) GetVersion() string {
 	return productVersionFromWailsJSON()
 }
 
+// GetUpdateManifest fetches update.json via the Go backend.
+// This avoids WebView fetch/CORS/network-policy issues on some Windows setups.
+func (a *App) GetUpdateManifest() (*updater.Manifest, error) {
+	u := updater.New()
+	base := context.Background()
+	if a != nil && a.ctx != nil {
+		base = a.ctx
+	}
+	ctx, cancel := context.WithTimeout(base, 20*time.Second)
+	defer cancel()
+	return u.Check(ctx)
+}
+
+// DebugFrontendLog writes a frontend diagnostic line into the shared app log.
+// It is intentionally lightweight and best-effort: failures should never
+// affect user flows.
+func (a *App) DebugFrontendLog(message string) {
+	if a == nil || a.log == nil {
+		return
+	}
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return
+	}
+	a.log.Info("[FRONTEND] " + msg)
+}
+
 // QueueDeepLink stores a resultv:// URL to be processed once startup finishes.
 // Called from main() before Wails has booted.
 func (a *App) QueueDeepLink(url string) {

@@ -424,18 +424,13 @@ func applyTLSAndTransport(out *SBOutbound, extra map[string]interface{}, default
 			pbk = getStringField(extra, "pbk", getStringField(extra, "publicKey", getStringField(extra, "public_key", "")))
 		}
 		sid := normalizeRealityShortID(getStringField(extra, "sid", ""))
-		spiderX := firstNonEmpty(
-			getStringField(extra, "spx", ""),
-			getStringField(extra, "spider_x", ""),
-			getStringField(extra, "spiderX", ""),
-		)
 		tlsObj := &SBOutboundTLS{
 			Enabled:    true,
 			ServerName: sni,
 			UTLS:       &SBUTLS{Enabled: true, Fingerprint: fp},
 		}
 		if pbk != "" {
-			tlsObj.Reality = &SBReality{Enabled: true, PublicKey: pbk, ShortID: sid, SpiderX: spiderX}
+			tlsObj.Reality = &SBReality{Enabled: true, PublicKey: pbk, ShortID: sid}
 		}
 		out.TLS = tlsObj
 		if alpnStr := getStringField(extra, "alpn", ""); alpnStr != "" {

@@ -18,9 +18,33 @@
 import { useState, useEffect } from "react";
 import { compareVersions } from "../utils/versionCheck";
 import { GetVersion } from "../../wailsjs/go/main/App";
+import { LogError, LogInfo } from "../../wailsjs/runtime/runtime";
 
 const UPDATE_URL =
     "https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json";
+
+function logUpdateCheck(level, message) {
+    const text = `[updater-check] ${message}`;
+    try {
+        if (
+            typeof window !== "undefined" &&
+            window.go?.main?.App?.DebugFrontendLog
+        ) {
+            window.go.main.App.DebugFrontendLog(text);
+        }
+    } catch {
+        
+    }
+    try {
+        if (level === "error") {
+            LogError(text);
+        } else {
+            LogInfo(text);
+        }
+    } catch {
+        
+    }
+}
 
 
 async function resolveLocalVersion() {
@@ -40,6 +64,28 @@ async function resolveLocalVersion() {
     return "0.0.0";
 }
 
+async function fetchRemoteManifest() {
+    if (
+        typeof window !== "undefined" &&
+        window.go?.main?.App?.GetUpdateManifest
+    ) {
+        try {
+            const manifest = await window.go.main.App.GetUpdateManifest();
+            if (manifest && typeof manifest === "object") {
+                logUpdateCheck("info", "manifest source=backend");
+                return manifest;
+            }
+        } catch (error) {
+            logUpdateCheck("error", `backend manifest fetch failed: ${String(error)}`);
+        }
+    }
+
+    const cacheBuster = `?_t=${Date.now()}`;
+    const remoteResponse = await fetch(`${UPDATE_URL}${cacheBuster}`);
+    logUpdateCheck("info", `manifestFetch source=frontend status=${remoteResponse.status} ok=${remoteResponse.ok}`);
+    return remoteResponse.json();
+}
+
 export const useCheckUpdate = () => {
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [latestVersionData, setLatestVersionData] = useState(null);
@@ -55,10 +101,9 @@ export const useCheckUpdate = () => {
                 setLoading(true);
                 const localVersion = await resolveLocalVersion();
                 setCurrentVersion(localVersion);
+                logUpdateCheck("info", `localVersion=${localVersion}`);
 
-                const cacheBuster = `?_t=${Date.now()}`;
-                const remoteResponse = await fetch(`${UPDATE_URL}${cacheBuster}`);
-                const remoteData = await remoteResponse.json();
+                const remoteData = await fetchRemoteManifest();
 
                 setLatestVersionData(remoteData);
 
@@ -68,14 +113,20 @@ export const useCheckUpdate = () => {
                     remoteData.platforms != null &&
                     Object.values(remoteData.platforms).some((a) => a?.url && a?.sha256);
                 setHasPlatformAsset(platformsPopulated);
+                logUpdateCheck("info", `remoteVersion=${remoteData?.version || ""} platformsPopulated=${platformsPopulated}`);
 
                 if (localVersion && remoteData.version) {
-                    const isNewer =
-                        compareVersions(localVersion, remoteData.version) === -1;
+                    const compareResult = compareVersions(localVersion, remoteData.version);
+                    const isNewer = compareResult === -1;
+                    logUpdateCheck(
+                        "info",
+                        `compare local=${localVersion} remote=${remoteData.version} result=${compareResult} updateAvailable=${isNewer}`,
+                    );
                     setUpdateAvailable(isNewer);
                 }
             } catch (error) {
                 console.error("Ошибка проверки обновлений:", error);
+                logUpdateCheck("error", `check failed: ${String(error)}`);
             } finally {
                 setLoading(false);
             }

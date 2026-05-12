@@ -41,10 +41,14 @@ func isInstalledBuild() bool {
 	if err != nil {
 		return false
 	}
-	exePath = strings.ToLower(filepath.Clean(exePath))
+	return isPathUnderProgramFiles(exePath)
+}
+
+func isPathUnderProgramFiles(path string) bool {
+	path = strings.ToLower(filepath.Clean(path))
 	for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
 		pf := os.Getenv(env)
-		if pf != "" && strings.HasPrefix(exePath, strings.ToLower(filepath.Clean(pf))+string(filepath.Separator)) {
+		if pf != "" && strings.HasPrefix(path, strings.ToLower(filepath.Clean(pf))+string(filepath.Separator)) {
 			return true
 		}
 	}
@@ -92,8 +96,9 @@ func installNSIS(installerPath string) error {
 		return fmt.Errorf("get current exe: %w", err)
 	}
 	currentExe = filepath.Clean(currentExe)
+	installForAllUsers := isPathUnderProgramFiles(currentExe)
 	logPath := filepath.Join(os.TempDir(), "resultv-updater.log")
-	script := buildInstallerHandoverScript(os.Getpid(), installerPath, currentExe, logPath)
+	script := buildInstallerHandoverScript(os.Getpid(), installerPath, currentExe, logPath, installForAllUsers)
 	return runPowerShellDetached(script)
 }
 
@@ -132,10 +137,18 @@ if($ok){
 `, log, src, dst, src, dst)
 }
 
-func buildInstallerHandoverScript(pid int, installerPath, currentExePath, logPath string) string {
+func buildInstallerHandoverScript(pid int, installerPath, currentExePath, logPath string, installForAllUsers bool) string {
 	installer := powershellEscapeSingleQuoted(installerPath)
 	currentExe := powershellEscapeSingleQuoted(currentExePath)
 	log := powershellEscapeSingleQuoted(logPath)
+	scopeArg := "/CURRENTUSER"
+	registryOrder := "@('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV')"
+	scopeLog := "current-user"
+	if installForAllUsers {
+		scopeArg = "/ALLUSERS"
+		registryOrder = "@('HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV','HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV')"
+		scopeLog = "all-users"
+	}
 	return fmt.Sprintf(`$ErrorActionPreference = 'Continue'
 $logPath = '%s'
 function Write-UpdateLog([string]$msg) {
@@ -143,21 +156,41 @@ function Write-UpdateLog([string]$msg) {
   Add-Content -LiteralPath $logPath -Value ("[$ts] " + $msg)
 }
 Write-UpdateLog 'installer handover started'
-try {
-  Wait-Process -Id %d -Timeout 45 -ErrorAction Stop
-  Write-UpdateLog 'wait-process completed'
-} catch {
-  Write-UpdateLog ("wait-process warning: " + $_.Exception.Message)
+Write-UpdateLog 'installer mode: %s'
+$proc = Get-Process -Id %d -ErrorAction SilentlyContinue
+if($proc){
+  try {
+    Wait-Process -Id %d -Timeout 45 -ErrorAction Stop
+    Write-UpdateLog 'wait-process completed'
+  } catch {
+    Write-UpdateLog ("wait-process warning: " + $_.Exception.Message)
+  }
+} else {
+  Write-UpdateLog 'wait-process skipped: process already exited'
 }
-$installerProc = Start-Process -FilePath '%s' -ArgumentList '/S' -Wait -PassThru
+$installerProc = Start-Process -FilePath '%s' -ArgumentList '/S', '%s' -Wait -PassThru
 Write-UpdateLog ("installer exit code: " + $installerProc.ExitCode)
 if($installerProc.ExitCode -eq 0){
-  Start-Process -FilePath '%s' | Out-Null
-  Write-UpdateLog 'relaunch requested'
+  $launchExe = '%s'
+  foreach($rk in %s){
+    try {
+      $reg = Get-ItemProperty -Path $rk -ErrorAction Stop
+      if($reg.InstallLocation){
+        $cand = Join-Path $reg.InstallLocation 'ResultV.exe'
+        if(Test-Path $cand){
+          $launchExe = $cand
+          Write-UpdateLog ("relaunch path from " + $rk + ": " + $launchExe)
+          break
+        }
+      }
+    } catch {}
+  }
+  Start-Process -FilePath $launchExe | Out-Null
+  Write-UpdateLog ("relaunch requested: " + $launchExe)
 } else {
   Write-UpdateLog 'installer reported non-zero exit code, relaunch skipped'
 }
-`, log, pid, installer, currentExe)
+`, log, scopeLog, pid, pid, installer, scopeArg, currentExe, registryOrder)
 }
 
 func runPowerShellDetached(script string) error {

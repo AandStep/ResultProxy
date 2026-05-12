@@ -43,16 +43,41 @@ func TestBuildInstallerHandoverScript_WaitsAndLogsInstallerExit(t *testing.T) {
 		"C:\\tmp\\ResultV-installer.exe",
 		"C:\\Program Files\\ResultV\\ResultV.exe",
 		"C:\\tmp\\resultv-updater.log",
+		true,
 	)
 	required := []string{
+		"Get-Process -Id 4242 -ErrorAction SilentlyContinue",
 		"Wait-Process -Id 4242 -Timeout 45",
-		"Start-Process -FilePath 'C:\\tmp\\ResultV-installer.exe' -ArgumentList '/S' -Wait -PassThru",
+		"Start-Process -FilePath 'C:\\tmp\\ResultV-installer.exe' -ArgumentList '/S', '/ALLUSERS' -Wait -PassThru",
+		"installer mode: all-users",
 		"installer exit code:",
-		"Start-Process -FilePath 'C:\\Program Files\\ResultV\\ResultV.exe'",
+		"relaunch path from",
+		"$launchExe = 'C:\\Program Files\\ResultV\\ResultV.exe'",
+		"Start-Process -FilePath $launchExe",
 	}
 	for _, token := range required {
 		if !strings.Contains(script, token) {
 			t.Fatalf("installer handover script missing token %q", token)
+		}
+	}
+}
+
+func TestBuildInstallerHandoverScript_CurrentUserMode(t *testing.T) {
+	script := buildInstallerHandoverScript(
+		99,
+		"C:\\tmp\\ResultV-installer.exe",
+		"C:\\Users\\user\\AppData\\Local\\Programs\\ResultV\\ResultV.exe",
+		"C:\\tmp\\resultv-updater.log",
+		false,
+	)
+	required := []string{
+		"Start-Process -FilePath 'C:\\tmp\\ResultV-installer.exe' -ArgumentList '/S', '/CURRENTUSER' -Wait -PassThru",
+		"installer mode: current-user",
+		"foreach($rk in @('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV','HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\ResultVResultV'))",
+	}
+	for _, token := range required {
+		if !strings.Contains(script, token) {
+			t.Fatalf("current-user installer handover script missing token %q", token)
 		}
 	}
 }

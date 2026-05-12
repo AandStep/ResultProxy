@@ -414,6 +414,13 @@ func TestTrojanURIWithRealityBuildsOutbound(t *testing.T) {
 	if out.TLS.Reality.ShortID != "f2b30c6723854005" {
 		t.Fatalf("short_id: %v", out.TLS.Reality.ShortID)
 	}
+	rawOutbound, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal outbound: %v", err)
+	}
+	if strings.Contains(string(rawOutbound), `"spider_x"`) {
+		t.Fatalf("unexpected reality spider_x in sing-box outbound: %s", string(rawOutbound))
+	}
 	if len(out.TLS.ALPN) > 0 {
 		t.Fatalf("expected empty ALPN for Reality, got: %v", out.TLS.ALPN)
 	}

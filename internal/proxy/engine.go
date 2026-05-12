@@ -243,7 +243,6 @@ type SBReality struct {
 	Enabled   bool   `json:"enabled"`
 	PublicKey string `json:"public_key"`
 	ShortID   string `json:"short_id,omitempty"`
-	SpiderX   string `json:"spider_x,omitempty"`
 }
 
 type SBOutboundTransport struct {
