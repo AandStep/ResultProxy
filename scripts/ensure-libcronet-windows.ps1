@@ -6,6 +6,10 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $dest = Join-Path $repoRoot "build/windows/libcronet.dll"
 $null = New-Item -ItemType Directory -Force -Path (Split-Path $dest)
 
+# Download the module so Dir is populated in the module cache on CI runners.
+& go mod download "github.com/sagernet/cronet-go/lib/windows_amd64"
+if ($LASTEXITCODE -ne 0) { throw "go mod download failed for windows_amd64 lib" }
+
 $json = & go list -m -json "github.com/sagernet/cronet-go/lib/windows_amd64" 2>&1
 if ($LASTEXITCODE -ne 0) { throw "go list failed: $json" }
 $mod = $json | ConvertFrom-Json
