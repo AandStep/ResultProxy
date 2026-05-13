@@ -40,9 +40,30 @@ async function resolveLocalVersion() {
     return "0.0.0";
 }
 
+async function fetchRemoteManifest() {
+    if (
+        typeof window !== "undefined" &&
+        window.go?.main?.App?.GetUpdateManifest
+    ) {
+        try {
+            const manifest = await window.go.main.App.GetUpdateManifest();
+            if (manifest && typeof manifest === "object") {
+                return manifest;
+            }
+        } catch {
+            
+        }
+    }
+
+    const cacheBuster = `?_t=${Date.now()}`;
+    const remoteResponse = await fetch(`${UPDATE_URL}${cacheBuster}`);
+    return remoteResponse.json();
+}
+
 export const useCheckUpdate = () => {
     const [updateAvailable, setUpdateAvailable] = useState(false);
     const [latestVersionData, setLatestVersionData] = useState(null);
+    const [hasPlatformAsset, setHasPlatformAsset] = useState(false);
     const [currentVersion, setCurrentVersion] = useState(() =>
         typeof __APP_VERSION__ !== "undefined" ? String(__APP_VERSION__) : "",
     );
@@ -55,15 +76,19 @@ export const useCheckUpdate = () => {
                 const localVersion = await resolveLocalVersion();
                 setCurrentVersion(localVersion);
 
-                const cacheBuster = `?_t=${Date.now()}`;
-                const remoteResponse = await fetch(`${UPDATE_URL}${cacheBuster}`);
-                const remoteData = await remoteResponse.json();
+                const remoteData = await fetchRemoteManifest();
 
                 setLatestVersionData(remoteData);
 
+                // True when the manifest has at least one platform asset filled in.
+                // The Go backend decides which specific asset to use at download time.
+                const platformsPopulated =
+                    remoteData.platforms != null &&
+                    Object.values(remoteData.platforms).some((a) => a?.url && a?.sha256);
+                setHasPlatformAsset(platformsPopulated);
+
                 if (localVersion && remoteData.version) {
-                    const isNewer =
-                        compareVersions(localVersion, remoteData.version) === -1;
+                    const isNewer = compareVersions(localVersion, remoteData.version) === -1;
                     setUpdateAvailable(isNewer);
                 }
             } catch (error) {
@@ -76,5 +101,5 @@ export const useCheckUpdate = () => {
         checkUpdate();
     }, []);
 
-    return { updateAvailable, latestVersionData, currentVersion, loading };
+    return { updateAvailable, latestVersionData, currentVersion, loading, hasPlatformAsset };
 };

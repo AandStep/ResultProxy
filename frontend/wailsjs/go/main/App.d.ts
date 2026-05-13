@@ -4,14 +4,19 @@ import {config} from '../models';
 import {proxy} from '../models';
 import {logger} from '../models';
 import {system} from '../models';
+import {updater} from '../models';
 
-export function AddSubscription(arg1:string,arg2:string):Promise<Array<config.ProxyEntry>>;
+export function AddSubscription(arg1:string,arg2:string,arg3:boolean):Promise<Array<config.ProxyEntry>>;
 
 export function ApplyMode(arg1:string):Promise<proxy.ConnectResultDTO>;
 
 export function CancelConnect():Promise<void>;
 
+export function CancelUpdate():Promise<void>;
+
 export function Connect(arg1:proxy.ProxyConfig,arg2:config.RoutingRules,arg3:boolean,arg4:boolean):Promise<proxy.ConnectResultDTO>;
+
+export function DebugFrontendLog(arg1:string):Promise<void>;
 
 export function DeleteSubscription(arg1:string):Promise<void>;
 
@@ -19,9 +24,9 @@ export function DetectCountry(arg1:string):Promise<string>;
 
 export function Disconnect():Promise<void>;
 
-export function ExportConfig():Promise<string>;
+export function ExportConfig(arg1:string):Promise<string>;
 
-export function FetchSubscription(arg1:string):Promise<Array<config.ProxyEntry>>;
+export function FetchSubscription(arg1:string,arg2:boolean):Promise<Array<config.ProxyEntry>>;
 
 export function GetConfig():Promise<config.AppConfig>;
 
@@ -39,11 +44,13 @@ export function GetPlatform():Promise<string>;
 
 export function GetStatus():Promise<proxy.StatusDTO>;
 
+export function GetUpdateManifest():Promise<updater.Manifest>;
+
 export function GetVersion():Promise<string>;
 
 export function HandleDeepLink(arg1:string):Promise<void>;
 
-export function ImportConfig(arg1:string):Promise<void>;
+export function ImportConfig(arg1:string,arg2:string,arg3:boolean):Promise<void>;
 
 export function IsAdmin():Promise<boolean>;
 
@@ -70,6 +77,8 @@ export function SetMode(arg1:string):Promise<void>;
 export function SetStartInTray(arg1:boolean):Promise<void>;
 
 export function SetTrayIcon(arg1:Array<number>):Promise<void>;
+
+export function StartUpdate():Promise<void>;
 
 export function SyncProxies(arg1:Array<config.ProxyEntry>):Promise<void>;
 

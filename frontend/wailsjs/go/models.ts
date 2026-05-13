@@ -10,6 +10,7 @@ export namespace config {
 	    trafficTotal?: number;
 	    expireUnix?: number;
 	    iconUrl?: string;
+	    allowInsecure?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Subscription(source);
@@ -26,6 +27,7 @@ export namespace config {
 	        this.trafficTotal = source["trafficTotal"];
 	        this.expireUnix = source["expireUnix"];
 	        this.iconUrl = source["iconUrl"];
+	        this.allowInsecure = source["allowInsecure"];
 	    }
 	}
 	export class AppSettings {
@@ -377,6 +379,61 @@ export namespace system {
 	        this.received = source["received"];
 	        this.sent = source["sent"];
 	    }
+	}
+
+}
+
+export namespace updater {
+	
+	export class PlatformAsset {
+	    url: string;
+	    sha256: string;
+	    size: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new PlatformAsset(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.url = source["url"];
+	        this.sha256 = source["sha256"];
+	        this.size = source["size"];
+	    }
+	}
+	export class Manifest {
+	    version: string;
+	    downloadUrl: string;
+	    platforms: Record<string, PlatformAsset>;
+	
+	    static createFrom(source: any = {}) {
+	        return new Manifest(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.version = source["version"];
+	        this.downloadUrl = source["downloadUrl"];
+	        this.platforms = this.convertValues(source["platforms"], PlatformAsset, true);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 
 }

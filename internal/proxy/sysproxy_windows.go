@@ -15,21 +15,6 @@
 
 //go:build windows
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 package proxy
 
 import (
@@ -45,22 +30,17 @@ const (
 	internetSettingsKey = `Software\Microsoft\Windows\CurrentVersion\Internet Settings`
 )
 
-
 func newSystemProxy(router *Router) SystemProxy {
 	return NewWindowsSystemProxy(router)
 }
-
-
 
 type WindowsSystemProxy struct {
 	router *Router
 }
 
-
 func NewWindowsSystemProxy(router *Router) *WindowsSystemProxy {
 	return &WindowsSystemProxy{router: router}
 }
-
 
 func (w *WindowsSystemProxy) Set(addr string, bypass []string) error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, internetSettingsKey, registry.SET_VALUE)
@@ -69,31 +49,25 @@ func (w *WindowsSystemProxy) Set(addr string, bypass []string) error {
 	}
 	defer key.Close()
 
-	
 	if err := key.SetDWordValue("ProxyEnable", 1); err != nil {
 		return fmt.Errorf("setting ProxyEnable: %w", err)
 	}
 
-	
 	if err := key.SetStringValue("ProxyServer", addr); err != nil {
 		return fmt.Errorf("setting ProxyServer: %w", err)
 	}
 
-	
 	override := w.buildBypassList(bypass)
 	if err := key.SetStringValue("ProxyOverride", override); err != nil {
 		return fmt.Errorf("setting ProxyOverride: %w", err)
 	}
 
-	
 	_ = key.DeleteValue("AutoConfigURL")
 
-	
 	_ = hiddenCommand("ipconfig", "/flushdns").Run()
 
 	return nil
 }
-
 
 func (w *WindowsSystemProxy) Disable() error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, internetSettingsKey, registry.SET_VALUE)
@@ -102,24 +76,20 @@ func (w *WindowsSystemProxy) Disable() error {
 	}
 	defer key.Close()
 
-	
 	if err := key.SetDWordValue("ProxyEnable", 0); err != nil {
 		return fmt.Errorf("disabling ProxyEnable: %w", err)
 	}
 
-	
 	_ = key.DeleteValue("ProxyServer")
 	_ = key.DeleteValue("ProxyOverride")
 	_ = key.DeleteValue("AutoConfigURL")
 
-	
 	_ = hiddenCommand("ipconfig", "/flushdns").Run()
+
+	_ = hiddenCommand("netsh", "winhttp", "reset", "proxy").Run()
 
 	return nil
 }
-
-
-
 
 func (w *WindowsSystemProxy) DisableSync() {
 	key, err := registry.OpenKey(registry.CURRENT_USER, internetSettingsKey, registry.SET_VALUE)
@@ -132,7 +102,6 @@ func (w *WindowsSystemProxy) DisableSync() {
 	_ = key.DeleteValue("ProxyServer")
 	_ = key.DeleteValue("ProxyOverride")
 }
-
 
 func (w *WindowsSystemProxy) ApplyKillSwitch() error {
 	key, err := registry.OpenKey(registry.CURRENT_USER, internetSettingsKey, registry.SET_VALUE)
@@ -148,15 +117,12 @@ func (w *WindowsSystemProxy) ApplyKillSwitch() error {
 		return fmt.Errorf("setting kill switch proxy address: %w", err)
 	}
 
-	
 	_ = key.DeleteValue("ProxyOverride")
 
-	
 	_ = hiddenCommand("ipconfig", "/flushdns").Run()
 
 	return nil
 }
-
 
 func (w *WindowsSystemProxy) buildBypassList(whitelist []string) string {
 	if len(whitelist) == 0 {

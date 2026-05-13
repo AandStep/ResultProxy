@@ -15,15 +15,12 @@
 
 package proxy
 
-
-
 type SystemProxy interface {
-	
 	Set(addr string, bypass []string) error
-	
+
 	Disable() error
-	
+
 	DisableSync()
-	
+
 	ApplyKillSwitch() error
 }

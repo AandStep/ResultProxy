@@ -31,6 +31,7 @@ import logo from "./assets/logo.png";
 import { useTranslation } from "react-i18next";
 import { useCheckUpdate } from "./hooks/useCheckUpdate";
 import UpdateNotificationModal from "./components/ui/UpdateNotificationModal";
+import UpdaterModal from "./components/ui/UpdaterModal";
 import ProtocolWarningModal from "./components/ui/ProtocolWarningModal";
 import AppDialogModal from "./components/ui/AppDialogModal";
 import DeepLinkImportModal from "./components/ui/DeepLinkImportModal";
@@ -46,16 +47,21 @@ const AppContent = () => {
         closeAppDialog,
         handleAppDialogConfirm,
     } = useConfigContext();
-    const { updateAvailable, latestVersionData, currentVersion } =
+    const { updateAvailable, latestVersionData, currentVersion, hasPlatformAsset } =
         useCheckUpdate();
-
-    const [isUpdateDismissed, setIsUpdateDismissed] = React.useState(
-        () => window.sessionStorage.getItem("updateDismissed") === "true",
+    const latestVersion = latestVersionData?.version || "";
+    const [dismissedUpdateVersion, setDismissedUpdateVersion] = React.useState(
+        () => window.sessionStorage.getItem("updateDismissedVersion") || "",
     );
+    const isUpdateDismissed = latestVersion !== "" && dismissedUpdateVersion === latestVersion;
 
     const handleDismissUpdate = () => {
-        window.sessionStorage.setItem("updateDismissed", "true");
-        setIsUpdateDismissed(true);
+        if (!latestVersion) return;
+        window.sessionStorage.setItem("updateDismissedVersion", latestVersion);
+        // Legacy key from the old behavior could suppress notifications forever
+        // in a long-running session if not removed.
+        window.sessionStorage.removeItem("updateDismissed");
+        setDismissedUpdateVersion(latestVersion);
     };
 
     if (!isConfigLoaded) {
@@ -89,12 +95,19 @@ const AppContent = () => {
             {activeTab === "settings" && <SettingsView />}
 
             {updateAvailable && !isUpdateDismissed && (
-                <UpdateNotificationModal
+                hasPlatformAsset
+                ? <UpdaterModal
                     currentVersion={currentVersion}
-                    latestVersion={latestVersionData?.version}
+                    latestVersion={latestVersion}
                     downloadUrl={latestVersionData?.downloadUrl}
                     onClose={handleDismissUpdate}
-                />
+                  />
+                : <UpdateNotificationModal
+                    currentVersion={currentVersion}
+                    latestVersion={latestVersion}
+                    downloadUrl={latestVersionData?.downloadUrl}
+                    onClose={handleDismissUpdate}
+                  />
             )}
 
             <ProtocolWarningModal

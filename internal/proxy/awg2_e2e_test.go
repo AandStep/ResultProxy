@@ -45,7 +45,7 @@ func TestAWG2HeaderRangeEndToEnd(t *testing.T) {
 		}
 	}`
 
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "brr.meowmeowcat.top",
 			Port:  51820,

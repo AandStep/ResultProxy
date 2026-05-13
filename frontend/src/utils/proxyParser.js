@@ -15,12 +15,121 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+const naiveEntryFromProxyUrl = (proxyURL, meta) => {
+    try {
+        const u = new URL(proxyURL);
+        const host = u.hostname;
+        if (!host) return null;
+        const port = u.port
+            ? parseInt(u.port, 10)
+            : u.protocol === "http:"
+              ? 80
+              : 443;
+        const username = decodeURIComponent(u.username || "");
+        const password = decodeURIComponent(u.password || "");
+        if (!username || !password) return null;
+        const extra = {};
+        if (meta?.listen != null && String(meta.listen).trim() !== "")
+            extra.naive_listen = String(meta.listen).trim();
+        if (meta?.log != null && String(meta.log).trim() !== "")
+            extra.naive_log = String(meta.log).trim();
+        const sni = u.searchParams.get("sni") || u.searchParams.get("host");
+        if (sni) extra.sni = sni.trim();
+        const ins = (u.searchParams.get("insecure") || "").toLowerCase();
+        if (["1", "true", "yes"].includes(ins)) extra.insecure = true;
+        return {
+            ip: host,
+            port,
+            type: "NAIVEPROXY",
+            name: "NaiveProxy",
+            username,
+            password,
+            country: "\u{1F310}",
+            extra: Object.keys(extra).length ? extra : undefined,
+        };
+    } catch {
+        return null;
+    }
+};
+
+/** Naive client JSON: { listen, proxy: "https://user:pass@host", log } */
+const parseNaiveClientJSON = (text) => {
+    const t = text.trim();
+    if (!t.startsWith("{") || !t.endsWith("}")) return null;
+    try {
+        const obj = JSON.parse(t);
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) return null;
+        if (obj.protocol || obj.type) return null;
+        if (obj.outbounds) return null;
+        const proxyStr = String(obj.proxy || "").trim();
+        if (!proxyStr.startsWith("http://") && !proxyStr.startsWith("https://")) return null;
+        const hasListen = Object.prototype.hasOwnProperty.call(obj, "listen");
+        const hasLog = Object.prototype.hasOwnProperty.call(obj, "log");
+        const onlyProxy = Object.keys(obj).length === 1 && Object.prototype.hasOwnProperty.call(obj, "proxy");
+        if (!hasListen && !hasLog && !onlyProxy) return null;
+        return naiveEntryFromProxyUrl(proxyStr, obj);
+    } catch {
+        return null;
+    }
+};
+
+const parseNaiveURI = (line) => {
+    let toParse = line.trim();
+    if (toParse.startsWith("naive+https://")) toParse = toParse.slice("naive+".length);
+    else if (toParse.startsWith("naive://")) toParse = toParse.replace(/^naive:\/\//, "https://");
+    else return null;
+    try {
+        const u = new URL(toParse);
+        const host = u.hostname;
+        if (!host) return null;
+        const port = u.port ? parseInt(u.port, 10) : 443;
+        const username = decodeURIComponent(u.username || "");
+        const password = decodeURIComponent(u.password || "");
+        if (!username || !password) return null;
+        const extra = {};
+        const sni =
+            u.searchParams.get("sni") ||
+            u.searchParams.get("serverName") ||
+            u.searchParams.get("server_name") ||
+            u.searchParams.get("peer");
+        if (sni) extra.sni = sni.trim();
+        const ins = (
+            u.searchParams.get("insecure") ||
+            u.searchParams.get("allowInsecure") ||
+            ""
+        ).toLowerCase();
+        if (["1", "true", "yes"].includes(ins)) extra.insecure = true;
+        let name = "NaiveProxy";
+        if (u.hash) {
+            try {
+                name = decodeURIComponent(u.hash.replace(/^#/, ""));
+            } catch {
+                name = u.hash.replace(/^#/, "");
+            }
+        }
+        return {
+            ip: host,
+            port,
+            type: "NAIVEPROXY",
+            name,
+            username,
+            password,
+            country: "\u{1F310}",
+            extra: Object.keys(extra).length ? extra : undefined,
+        };
+    } catch {
+        return null;
+    }
+};
+
 export const parseProxies = (content) => {
     if (!content || typeof content !== "string") return [];
 
     const wireguardProxy = parseWireGuardConf(content);
     if (wireguardProxy) return [wireguardProxy];
 
+    const naiveFromJson = parseNaiveClientJSON(content);
+    if (naiveFromJson) return [naiveFromJson];
 
     const lines = content
         .split(/\r?\n/)
@@ -76,6 +185,7 @@ const parseLine = (line) => {
     if (line.startsWith("vmess://")) return parseVMess(line);
     if (line.startsWith("vless://")) return parseVLESS(line);
     if (line.startsWith("trojan://")) return parseTrojan(line);
+    if (line.startsWith("naive+https://") || line.startsWith("naive://")) return parseNaiveURI(line);
     if (line.startsWith("hy2://")) return parseHysteria2(line);
     if (line.startsWith("hysteria2://")) return parseHysteria2(line);
 
@@ -499,6 +609,7 @@ export const VPN_TYPES = [
     "WIREGUARD",
     "AMNEZIAWG",
     "HYSTERIA2",
+    "NAIVEPROXY",
     "AUTO",
 ];
 

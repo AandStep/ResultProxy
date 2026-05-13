@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildPFRulesAlwaysBlocksByDefault(t *testing.T) {
-	got := buildPFRules("")
+	got := buildPFRules(nil, nil)
 	if !strings.Contains(got, "block out all") {
 		t.Fatalf("expected default block: %s", got)
 	}
@@ -18,14 +18,14 @@ func TestBuildPFRulesAlwaysBlocksByDefault(t *testing.T) {
 }
 
 func TestBuildPFRulesAddsProxyPass(t *testing.T) {
-	got := buildPFRules("1.2.3.4")
+	got := buildPFRules([]string{"1.2.3.4"}, nil)
 	if !strings.Contains(got, "pass out from any to 1.2.3.4") {
 		t.Fatalf("expected proxy pass rule, got: %s", got)
 	}
 }
 
 func TestBuildPFRulesAllowsLAN(t *testing.T) {
-	got := buildPFRules("")
+	got := buildPFRules(nil, []string{"1.1.1.1"})
 	for _, want := range []string{
 		"127.0.0.0/8",
 		"10.0.0.0/8",
@@ -36,6 +36,32 @@ func TestBuildPFRulesAllowsLAN(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("expected %q in ruleset, got: %s", want, got)
 		}
+	}
+}
+
+// DNS-leak regression: the previous ruleset used "to any port 53". The new
+// ruleset must scope DNS to specific resolver IPs.
+func TestBuildPFRulesScopesDNSToResolvers(t *testing.T) {
+	got := buildPFRules([]string{"1.2.3.4"}, []string{"1.1.1.1", "9.9.9.9"})
+	if strings.Contains(got, "to any port 53") {
+		t.Fatalf("pf rules must not allow port 53 to any destination, got: %s", got)
+	}
+	for _, want := range []string{
+		"pass out proto udp from any to 1.1.1.1 port 53",
+		"pass out proto tcp from any to 1.1.1.1 port 53",
+		"pass out proto udp from any to 9.9.9.9 port 53",
+		"pass out proto tcp from any to 9.9.9.9 port 53",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("expected %q in ruleset, got: %s", want, got)
+		}
+	}
+}
+
+func TestBuildPFRulesNoDNSRuleWhenEmpty(t *testing.T) {
+	got := buildPFRules([]string{"1.2.3.4"}, nil)
+	if strings.Contains(got, "port 53") {
+		t.Fatalf("empty dnsIPs must produce no port-53 rule, got: %s", got)
 	}
 }
 

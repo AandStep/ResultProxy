@@ -52,19 +52,20 @@ func NewKillSwitch() KillSwitch {
 	}
 }
 
-func (k *LinuxKillSwitch) Enable(proxyAddr string) error {
+func (k *LinuxKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.enabled {
 		return nil
 	}
-	proxyIP := extractValidIP(proxyAddr)
+	proxyIPs := resolveProxyIPs(proxyAddr)
+	dnsIPs := extractDNSIPs(dnsServers)
 
 	var err error
 	if k.useNftBackend {
-		err = enableNftables(proxyIP)
+		err = enableNftables(proxyIPs, dnsIPs)
 	} else {
-		err = enableIptables(proxyIP)
+		err = enableIptables(proxyIPs, dnsIPs)
 	}
 	if err != nil {
 		return err
@@ -112,7 +113,7 @@ func nftablesAvailable() bool {
 
 // --- nftables backend ---
 
-func buildNftablesRuleset(proxyIP string) string {
+func buildNftablesRuleset(proxyIPs []string, dnsIPs []string) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("table inet %s {\n", nftTableName))
 	b.WriteString("\tchain output {\n")
@@ -121,9 +122,34 @@ func buildNftablesRuleset(proxyIP string) string {
 	b.WriteString("\t\toif lo accept\n")
 	b.WriteString("\t\tip daddr { 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16 } accept\n")
 	b.WriteString("\t\tip6 daddr { ::1, fe80::/10, fc00::/7 } accept\n")
-	b.WriteString("\t\tudp dport 53 accept\n")
-	b.WriteString("\t\ttcp dport 53 accept\n")
-	if proxyIP != "" {
+
+	// DNS allow rules are scoped to specific resolver IPs. Previously the
+	// kill switch let udp/tcp dport 53 go to ANY destination — that is the
+	// classic kill-switch DNS leak (queries to ISP DNS still go out when the
+	// tunnel drops). Now: only the configured (or fallback public) resolvers
+	// can be reached on port 53.
+	var v4dns, v6dns []string
+	for _, ip := range dnsIPs {
+		if strings.Contains(ip, ":") {
+			v6dns = append(v6dns, ip)
+		} else {
+			v4dns = append(v4dns, ip)
+		}
+	}
+	if len(v4dns) > 0 {
+		list := strings.Join(v4dns, ", ")
+		b.WriteString(fmt.Sprintf("\t\tip daddr { %s } udp dport 53 accept\n", list))
+		b.WriteString(fmt.Sprintf("\t\tip daddr { %s } tcp dport 53 accept\n", list))
+	}
+	if len(v6dns) > 0 {
+		list := strings.Join(v6dns, ", ")
+		b.WriteString(fmt.Sprintf("\t\tip6 daddr { %s } udp dport 53 accept\n", list))
+		b.WriteString(fmt.Sprintf("\t\tip6 daddr { %s } tcp dport 53 accept\n", list))
+	}
+
+	// Proxy server allow rules. When a hostname resolves to multiple IPs
+	// (CDN, geo-loadbalanced VPN endpoints) all of them must be reachable.
+	for _, proxyIP := range proxyIPs {
 		if strings.Contains(proxyIP, ":") {
 			b.WriteString(fmt.Sprintf("\t\tip6 daddr %s accept\n", proxyIP))
 		} else {
@@ -135,9 +161,14 @@ func buildNftablesRuleset(proxyIP string) string {
 	return b.String()
 }
 
-func enableNftables(proxyIP string) error {
-	rules := buildNftablesRuleset(proxyIP)
-	if err := os.WriteFile(nftablesRulesPath, []byte(rules), 0o644); err != nil {
+func enableNftables(proxyIPs []string, dnsIPs []string) error {
+	rules := buildNftablesRuleset(proxyIPs, dnsIPs)
+	// 0o600: this file contains the proxy IP — not a top-tier secret, but
+	// it's a strong "this user is running a VPN to <IP>" indicator that
+	// shouldn't be world-readable on a multi-user system. The matching
+	// Darwin/Windows paths are already user-private; this keeps Linux in
+	// line.
+	if err := os.WriteFile(nftablesRulesPath, []byte(rules), 0o600); err != nil {
 		return fmt.Errorf("write nft ruleset: %w", err)
 	}
 	// Remove any leftover table from a previous run before installing.
@@ -163,7 +194,7 @@ func disableNftables() error {
 
 // --- iptables backend ---
 
-func enableIptables(proxyIP string) error {
+func enableIptables(proxyIPs []string, dnsIPs []string) error {
 	// Tear down any leftover chain first so we start from a known state.
 	_ = disableIptables()
 
@@ -176,10 +207,25 @@ func enableIptables(proxyIP string) error {
 		{"iptables", "-A", iptablesChainName, "-d", "172.16.0.0/12", "-j", "ACCEPT"},
 		{"iptables", "-A", iptablesChainName, "-d", "192.168.0.0/16", "-j", "ACCEPT"},
 		{"iptables", "-A", iptablesChainName, "-d", "169.254.0.0/16", "-j", "ACCEPT"},
-		{"iptables", "-A", iptablesChainName, "-p", "udp", "--dport", "53", "-j", "ACCEPT"},
-		{"iptables", "-A", iptablesChainName, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"},
 	}
-	if proxyIP != "" && !strings.Contains(proxyIP, ":") {
+	// Per-resolver DNS allow rules (previously: unconditional --dport 53).
+	// iptables (v4) does not handle IPv6 addresses; v6 DNS resolvers would
+	// need ip6tables, which we don't manage here — they're silently skipped.
+	for _, ip := range dnsIPs {
+		if strings.Contains(ip, ":") {
+			continue
+		}
+		steps = append(steps,
+			[]string{"iptables", "-A", iptablesChainName, "-d", ip, "-p", "udp", "--dport", "53", "-j", "ACCEPT"},
+			[]string{"iptables", "-A", iptablesChainName, "-d", ip, "-p", "tcp", "--dport", "53", "-j", "ACCEPT"},
+		)
+	}
+	// iptables here is v4-only; skip v6 proxy IPs silently (ip6tables would
+	// need a separate management path we don't currently maintain).
+	for _, proxyIP := range proxyIPs {
+		if strings.Contains(proxyIP, ":") {
+			continue
+		}
 		steps = append(steps, []string{"iptables", "-A", iptablesChainName, "-d", proxyIP, "-j", "ACCEPT"})
 	}
 	steps = append(steps,

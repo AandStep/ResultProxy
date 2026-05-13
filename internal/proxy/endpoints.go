@@ -17,6 +17,8 @@ package proxy
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/netip"
 	"strconv"
 	"strings"
 )
@@ -26,18 +28,57 @@ const (
 	DefaultWireGuardAllowedIP = "0.0.0.0/0"
 )
 
+func normalizeWireGuardLocalPrefix(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", fmt.Errorf("empty")
+	}
+	if strings.Contains(s, "/") {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return "", err
+		}
+		return p.String(), nil
+	}
+	a, err := netip.ParseAddr(s)
+	if err != nil {
+		return "", err
+	}
+	a = a.Unmap()
+	if a.Is4() {
+		return netip.PrefixFrom(a, 32).String(), nil
+	}
+	return netip.PrefixFrom(a, 128).String(), nil
+}
 
+func normalizeWireGuardLocalPrefixes(addrs []string) ([]string, error) {
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		n, err := normalizeWireGuardLocalPrefix(a)
+		if err != nil {
+			return nil, fmt.Errorf("%q: %w", a, err)
+		}
+		out = append(out, n)
+	}
+	return out, nil
+}
 
-func buildEndpoints(proxy ProxyConfig) []SBEndpoint {
+func buildEndpoints(proxy ProxyConfig) ([]SBEndpoint, error) {
 	pt := strings.ToUpper(strings.TrimSpace(proxy.Type))
 	if pt != "WIREGUARD" && pt != "AMNEZIAWG" {
-		return nil
+		return nil, nil
 	}
 	extra := parseExtra(proxy)
 
 	address := stringListFromExtra(extra, "address", "local_address", "localAddress")
 	if len(address) == 0 {
 		address = []string{DefaultWireGuardAddress}
+	} else {
+		var err error
+		address, err = normalizeWireGuardLocalPrefixes(address)
+		if err != nil {
+			return nil, fmt.Errorf("wireguard local address: %w", err)
+		}
 	}
 
 	privateKey := getStringField(extra, "private_key", "")
@@ -91,7 +132,7 @@ func buildEndpoints(proxy ProxyConfig) []SBEndpoint {
 		}
 	}
 
-	return []SBEndpoint{ep}
+	return []SBEndpoint{ep}, nil
 }
 
 func stringListFromExtra(extra map[string]interface{}, keys ...string) []string {

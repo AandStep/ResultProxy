@@ -414,6 +414,13 @@ func TestTrojanURIWithRealityBuildsOutbound(t *testing.T) {
 	if out.TLS.Reality.ShortID != "f2b30c6723854005" {
 		t.Fatalf("short_id: %v", out.TLS.Reality.ShortID)
 	}
+	rawOutbound, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("marshal outbound: %v", err)
+	}
+	if strings.Contains(string(rawOutbound), `"spider_x"`) {
+		t.Fatalf("unexpected reality spider_x in sing-box outbound: %s", string(rawOutbound))
+	}
 	if len(out.TLS.ALPN) > 0 {
 		t.Fatalf("expected empty ALPN for Reality, got: %v", out.TLS.ALPN)
 	}
@@ -733,5 +740,58 @@ func TestParseWireGuardURI(t *testing.T) {
 	}
 	if extra["pre_shared_key"] != "pskKey" {
 		t.Fatalf("unexpected psk: %v", extra["pre_shared_key"])
+	}
+}
+
+func TestParseNaivePlusHTTPSURI(t *testing.T) {
+	raw := "naive+https://myuser:mypass@naive.example:8443?sni=naive.example#MyNaive"
+	entry, err := ParseProxyURI(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entry.Type != "NAIVEPROXY" || entry.IP != "naive.example" || entry.Port != 8443 {
+		t.Fatalf("entry: %+v", entry)
+	}
+	if entry.Username != "myuser" || entry.Password != "mypass" {
+		t.Fatalf("auth: %q / %q", entry.Username, entry.Password)
+	}
+	if entry.Name != "MyNaive" {
+		t.Fatalf("name: %q", entry.Name)
+	}
+	var ex map[string]interface{}
+	if err := json.Unmarshal(entry.Extra, &ex); err != nil {
+		t.Fatal(err)
+	}
+	if ex["sni"] != "naive.example" {
+		t.Fatalf("sni: %v", ex["sni"])
+	}
+}
+
+func TestParseNaiveClientJSONSubscription(t *testing.T) {
+	body := `{
+  "listen": "socks://127.0.0.1:1080",
+  "proxy": "https://u1:p1@us01.example.online:443",
+  "log": ""
+}`
+	entries, err := ParseSubscriptionBody(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("len=%d", len(entries))
+	}
+	e := entries[0]
+	if e.Type != "NAIVEPROXY" || e.IP != "us01.example.online" || e.Port != 443 {
+		t.Fatalf("entry: %+v", e)
+	}
+	if e.Username != "u1" || e.Password != "p1" {
+		t.Fatalf("auth")
+	}
+	var ex map[string]interface{}
+	if err := json.Unmarshal(e.Extra, &ex); err != nil {
+		t.Fatal(err)
+	}
+	if ex["naive_listen"] != "socks://127.0.0.1:1080" {
+		t.Fatalf("naive_listen: %v", ex["naive_listen"])
 	}
 }

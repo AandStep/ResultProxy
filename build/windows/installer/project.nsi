@@ -182,6 +182,8 @@ Section
   SetOutPath $INSTDIR
 
   !insertmacro wails.files
+  ; sing-box naive (Cronet / purego): must sit next to ResultV.exe (see scripts/ensure-libcronet-windows.ps1)
+  File "/oname=libcronet.dll" "..\libcronet.dll"
 
   CreateShortcut "$SMPROGRAMS\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
   CreateShortCut "$DESKTOP\${INFO_PRODUCTNAME}.lnk" "$INSTDIR\${PRODUCT_EXECUTABLE}"
@@ -202,6 +204,33 @@ SectionEnd
 
 Section "uninstall"
   !insertmacro rp.setShellContext
+
+  ; Kill Switch firewall cleanup (best-effort): these rules persist beyond
+  ; process lifetime and must be removed on uninstall/reinstall.
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_BlockAll"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowLocal"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowProxy"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowDNS"'
+
+  StrCpy $R0 0
+ks_proxy_loop:
+  IntCmp $R0 64 ks_proxy_next ks_dns_loop ks_dns_loop
+ks_proxy_next:
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowProxy_$R0"'
+  IntOp $R0 $R0 + 1
+  Goto ks_proxy_loop
+
+ks_dns_loop:
+  StrCpy $R0 0
+ks_dns_item_loop:
+  IntCmp $R0 16 ks_dns_next ks_cleanup_done ks_cleanup_done
+ks_dns_next:
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowDNS_$R0_udp"'
+  nsExec::ExecToLog 'netsh advfirewall firewall delete rule name="ResultV_KillSwitch_AllowDNS_$R0_tcp"'
+  IntOp $R0 $R0 + 1
+  Goto ks_dns_item_loop
+
+ks_cleanup_done:
 
   RMDir /r $INSTDIR
 

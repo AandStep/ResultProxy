@@ -210,7 +210,7 @@ func TestBuildRoute_TunnelMode_Hysteria2DoesNotBlockUDP443(t *testing.T) {
 }
 
 func TestBuildTunnelModeConfig_WireGuardFinalTargetDefined(t *testing.T) {
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:  ProxyModeTunnel,
 		Proxy: ProxyConfig{Type: "wireguard"},
 	})
@@ -226,7 +226,7 @@ func TestBuildTunnelModeConfig_WireGuardFinalTargetDefined(t *testing.T) {
 }
 
 func TestBuildTunnelModeConfig_DNSServersPresent(t *testing.T) {
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:  ProxyModeTunnel,
 		Proxy: ProxyConfig{Type: "hysteria2"},
 	})
@@ -245,7 +245,7 @@ func TestBuildTunnelModeConfig_DNSServersPresent(t *testing.T) {
 }
 
 func TestBuildTunnelModeConfig_SSTunnelHasTCPDNSDetour(t *testing.T) {
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:  ProxyModeTunnel,
 		Proxy: ProxyConfig{Type: "ss"},
 	})
@@ -265,7 +265,7 @@ func TestBuildTunnelModeConfig_SSTunnelHasTCPDNSDetour(t *testing.T) {
 }
 
 func TestBuildTunnelModeConfig_CustomDNSUniqueTagsAndTCPForSSTunnel(t *testing.T) {
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:       ProxyModeTunnel,
 		Proxy:      ProxyConfig{Type: "SS"},
 		DNSServers: []string{"8.8.8.8", "1.1.1.1"},
@@ -291,7 +291,7 @@ func TestBuildTunnelModeConfig_CustomDNSUniqueTagsAndTCPForSSTunnel(t *testing.T
 
 func TestBuildTunnelModeConfig_IPv4OnlyServerForcesIPv4DNS(t *testing.T) {
 
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:  ProxyModeTunnel,
 		Proxy: ProxyConfig{IP: "185.126.67.168", Port: 443, Type: "hysteria2"},
 	})
@@ -302,7 +302,7 @@ func TestBuildTunnelModeConfig_IPv4OnlyServerForcesIPv4DNS(t *testing.T) {
 		t.Fatalf("expected ipv4_only DNS strategy for IPv4-only server, got: %q", cfg.DNS.Strategy)
 	}
 
-	cfg2 := BuildTunnelModeConfig(EngineConfig{
+	cfg2 := mustBuildTunnelModeConfig(t, EngineConfig{
 		Mode:  ProxyModeTunnel,
 		Proxy: ProxyConfig{IP: "1.2.3.4", Port: 443, Type: "vless"},
 	})
@@ -369,7 +369,7 @@ func TestSplitDNSServer(t *testing.T) {
 }
 
 func TestBuildProxyModeConfig_CustomDNSHaveUniqueTags(t *testing.T) {
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14081",
 		Proxy:      ProxyConfig{Type: "SS", IP: "example.com", Port: 443, Password: "p"},
@@ -397,7 +397,7 @@ func TestBuildProxyModeConfig_CustomDNSHaveUniqueTags(t *testing.T) {
 func TestBuildProxyModeConfig_CustomDNSDirectUDP(t *testing.T) {
 	// proxy-режим: custom DNS servers должны быть прямыми UDP без detour.
 	// DNS через detour: proxy создавал circular dependency и ломал все соединения.
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14081",
 		Proxy:      ProxyConfig{Type: "TROJAN", IP: "docs.meowmeowcat.top", Port: 7443, Password: "p"},
@@ -422,7 +422,7 @@ func TestBuildProxyModeConfig_CustomDNSDirectUDP(t *testing.T) {
 
 func TestBuildProxyModeConfig_NoDNSRulesInProxyMode(t *testing.T) {
 	// proxy-режим: без detour не нужны DNS-правила для домена прокси-сервера.
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14081",
 		Proxy:      ProxyConfig{Type: "TROJAN", IP: "docs.meowmeowcat.top", Port: 7443, Password: "p"},
@@ -432,5 +432,68 @@ func TestBuildProxyModeConfig_NoDNSRulesInProxyMode(t *testing.T) {
 	}
 	if len(cfg.DNS.Rules) != 0 {
 		t.Fatalf("expected no dns rules in proxy mode, got rules=%+v", cfg.DNS.Rules)
+	}
+}
+
+// TestBuildProxyModeConfig_AppWhitelistEnablesFindProcess verifies that when
+// the user has app exclusions, the proxy-mode config tells sing-box to
+// resolve PID/process for every connection. Without find_process the
+// process_path_regex rules wouldn't fire and excluded apps would still
+// route through the proxy.
+func TestBuildProxyModeConfig_AppWhitelistEnablesFindProcess(t *testing.T) {
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
+		Mode:         ProxyModeProxy,
+		ListenAddr:   "127.0.0.1:14081",
+		Proxy:        ProxyConfig{Type: "TROJAN", IP: "1.2.3.4", Port: 443, Password: "p"},
+		AppWhitelist: []string{"steam.exe", "steamwebhelper.exe"},
+	})
+	if cfg.Route == nil {
+		t.Fatal("route missing")
+	}
+	if !cfg.Route.FindProcess {
+		t.Fatal("expected find_process=true when app whitelist is set, got false")
+	}
+}
+
+func TestBuildProxyModeConfig_NoAppWhitelistOmitsFindProcess(t *testing.T) {
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
+		Mode:       ProxyModeProxy,
+		ListenAddr: "127.0.0.1:14081",
+		Proxy:      ProxyConfig{Type: "TROJAN", IP: "1.2.3.4", Port: 443, Password: "p"},
+	})
+	if cfg.Route == nil {
+		t.Fatal("route missing")
+	}
+	if cfg.Route.FindProcess {
+		t.Fatal("expected find_process=false when whitelist empty, got true")
+	}
+}
+
+// TestBuildRoute_ProxyMode_AppWhitelistGetsDirectRule covers the actual
+// excluded-process rule. In proxy mode the mixed inbound terminates the
+// connection locally; sing-box looks up the originating PID and matches
+// against process_path_regex. The rule must point at the direct outbound
+// so the excluded app bypasses the tunnel.
+func TestBuildRoute_ProxyMode_AppWhitelistGetsDirectRule(t *testing.T) {
+	cfg := EngineConfig{
+		Mode:         ProxyModeProxy,
+		AppWhitelist: []string{"steam.exe", "steamwebhelper.exe"},
+	}
+	route := buildRoute(cfg)
+	if route == nil {
+		t.Fatal("route missing")
+	}
+	var found bool
+	for _, r := range route.Rules {
+		if r.Outbound != "direct" || len(r.ProcessPathRegex) == 0 {
+			continue
+		}
+		if len(r.ProcessPathRegex) >= 2 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected process_path_regex direct rule with both entries, rules=%+v", route.Rules)
 	}
 }

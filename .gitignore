@@ -36,6 +36,10 @@ build/bin/*.exe
 build/bin/cache.db
 /cache.db
 build/windows/installer/tmp/*
+# Fetched from Go modules via scripts/ensure-libcronet-*.{ps1,sh}
+build/windows/libcronet.dll
+build/darwin/libcronet.dylib
+build/linux/libcronet.so
 *.timestamp-*.mjs
 /tmp.exe
 *~
@@ -51,3 +55,6 @@ build/windows/installer/tmp/*
 tools/encrypt-sub/
 build-release.bat
 build-release.sh
+
+# build
+build/bin/

@@ -63,6 +63,63 @@ func TestValidateEngineConfig_Hysteria2RequiresPassword(t *testing.T) {
 	}
 }
 
+func TestValidateEngineConfig_WireGuardBareLocalIPv4Normalized(t *testing.T) {
+	extra := map[string]interface{}{
+		"private_key": "priv",
+		"public_key":  "pub",
+		"address":     []string{"172.16.0.2"},
+		"allowed_ips": []string{"0.0.0.0/0"},
+	}
+	raw, _ := json.Marshal(extra)
+	code, err := validateEngineConfig(EngineConfig{
+		Mode: ProxyModeTunnel,
+		Proxy: ProxyConfig{
+			Type:  "WIREGUARD",
+			IP:    "127.0.0.1",
+			Port:  51820,
+			Extra: raw,
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected validation error: %v", err)
+	}
+	if code != "" {
+		t.Fatalf("unexpected code: %s", code)
+	}
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
+		Mode:  ProxyModeTunnel,
+		Proxy: ProxyConfig{Type: "WIREGUARD", IP: "127.0.0.1", Port: 51820, Extra: raw},
+	})
+	if len(cfg.Endpoints) != 1 || len(cfg.Endpoints[0].Address) != 1 || cfg.Endpoints[0].Address[0] != "172.16.0.2/32" {
+		t.Fatalf("endpoint address: %+v", cfg.Endpoints)
+	}
+}
+
+func TestValidateEngineConfig_WireGuardInvalidLocalAddress(t *testing.T) {
+	extra := map[string]interface{}{
+		"private_key": "priv",
+		"public_key":  "pub",
+		"address":     []string{"not-an-ip"},
+		"allowed_ips": []string{"0.0.0.0/0"},
+	}
+	raw, _ := json.Marshal(extra)
+	code, err := validateEngineConfig(EngineConfig{
+		Mode: ProxyModeTunnel,
+		Proxy: ProxyConfig{
+			Type:  "WIREGUARD",
+			IP:    "127.0.0.1",
+			Port:  51820,
+			Extra: raw,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if code != ConnectErrorInvalidConfig {
+		t.Fatalf("unexpected code: %s", code)
+	}
+}
+
 func TestValidateEngineConfig_WireGuardValidConfig(t *testing.T) {
 	extra := map[string]interface{}{
 		"private_key": "priv",

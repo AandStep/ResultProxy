@@ -5,9 +5,11 @@ go 1.26.1
 require (
 	github.com/getlantern/systray v1.2.2
 	github.com/google/uuid v1.6.0
+	github.com/mitchellh/go-ps v1.0.0
 	github.com/sagernet/sing v0.8.9
 	github.com/sagernet/sing-box v1.13.11
 	github.com/wailsapp/wails/v2 v2.12.0
+	golang.org/x/crypto v0.49.0
 	golang.org/x/sys v0.42.0
 )
 
@@ -113,7 +115,6 @@ require (
 	github.com/metacubex/utls v1.8.4 // indirect
 	github.com/mholt/acmez/v3 v3.1.6 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
-	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
@@ -211,7 +212,6 @@ require (
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
-	golang.org/x/crypto v0.49.0 // indirect
 	golang.org/x/exp v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.34.0 // indirect
 	golang.org/x/net v0.52.0 // indirect

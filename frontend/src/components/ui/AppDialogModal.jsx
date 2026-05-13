@@ -36,7 +36,7 @@ const VARIANT_STYLES = {
     icon: AlertTriangle,
     iconClass: "text-rose-400",
     confirmClass:
-      "bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border-rose-500/40",
+      "bg-rose-600 hover:bg-rose-500 text-white border-rose-500",
   },
 };
 

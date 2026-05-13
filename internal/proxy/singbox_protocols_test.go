@@ -36,7 +36,7 @@ func TestWireGuardEndpointConfigParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "127.0.0.1",
 			Port:  51820,
@@ -83,7 +83,7 @@ func TestAmneziaWGEndpointConfigIncludesAmneziaSection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "127.0.0.1",
 			Port:  51820,
@@ -121,7 +121,7 @@ func TestHysteria2OutboundConfigParses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:    "example.com",
 			Port:  443,
@@ -142,6 +142,53 @@ func TestHysteria2OutboundConfigParses(t *testing.T) {
 	}
 }
 
+func TestNaiveOutboundConfigParses(t *testing.T) {
+	extra := map[string]interface{}{
+		"sni": "tls.example.com",
+	}
+	raw, err := json.Marshal(extra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
+		Proxy: ProxyConfig{
+			IP:       "srv.example.com",
+			Port:     443,
+			Type:     "NAIVEPROXY",
+			Username: "u1",
+			Password: "p1",
+			Extra:    raw,
+		},
+		Mode:       ProxyModeProxy,
+		ListenAddr: "127.0.0.1:14081",
+	})
+	var proxyOB *SBOutbound
+	for i := range cfg.Outbounds {
+		if cfg.Outbounds[i].Tag == "proxy" {
+			proxyOB = &cfg.Outbounds[i]
+			break
+		}
+	}
+	if proxyOB == nil || proxyOB.Type != "naive" {
+		t.Fatalf("outbound: %+v", proxyOB)
+	}
+	if proxyOB.TLS == nil || !proxyOB.TLS.Enabled || proxyOB.TLS.ServerName != "tls.example.com" {
+		t.Fatalf("tls: %+v", proxyOB.TLS)
+	}
+	if proxyOB.TLS.UTLS != nil {
+		t.Fatal("utls must be omitted for sing-box naive outbound")
+	}
+	j, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := include.Context(context.Background())
+	var opt option.Options
+	if err := singjson.UnmarshalContext(ctx, j, &opt); err != nil {
+		t.Fatalf("parsing options: %v", err)
+	}
+}
+
 func TestSSTunnelConfigParsesWithDNS(t *testing.T) {
 	extra := map[string]interface{}{
 		"method": "chacha20-ietf-poly1305",
@@ -150,7 +197,7 @@ func TestSSTunnelConfigParsesWithDNS(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := BuildTunnelModeConfig(EngineConfig{
+	cfg := mustBuildTunnelModeConfig(t, EngineConfig{
 		Proxy: ProxyConfig{
 			IP:       "example.com",
 			Port:     443,

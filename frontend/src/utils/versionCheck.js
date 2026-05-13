@@ -18,17 +18,54 @@
 export const compareVersions = (v1, v2) => {
   if (!v1 || !v2) return 0;
 
-  const v1Parts = v1.split(".").map(Number);
-  const v2Parts = v2.split(".").map(Number);
+  const parseVersion = (raw) => {
+    const normalized = String(raw).trim().replace(/^v/i, "");
+    const [coreRaw, preRaw = ""] = normalized.split("-", 2);
+    const core = coreRaw.split(".").map((part) => {
+      const n = Number.parseInt(part, 10);
+      return Number.isFinite(n) ? n : 0;
+    });
+    const pre = preRaw
+      ? preRaw.split(".").map((part) => {
+          if (/^\d+$/.test(part)) return { type: "num", value: Number.parseInt(part, 10) };
+          return { type: "str", value: part.toLowerCase() };
+        })
+      : [];
+    return { core, pre };
+  };
 
-  const length = Math.max(v1Parts.length, v2Parts.length);
+  const a = parseVersion(v1);
+  const b = parseVersion(v2);
+  const coreLen = Math.max(a.core.length, b.core.length);
 
-  for (let i = 0; i < length; i++) {
-    const p1 = v1Parts[i] || 0;
-    const p2 = v2Parts[i] || 0;
+  for (let i = 0; i < coreLen; i++) {
+    const x = a.core[i] ?? 0;
+    const y = b.core[i] ?? 0;
+    if (x > y) return 1;
+    if (x < y) return -1;
+  }
 
-    if (p1 > p2) return 1;
-    if (p1 < p2) return -1;
+  const aPre = a.pre.length > 0;
+  const bPre = b.pre.length > 0;
+  if (!aPre && !bPre) return 0;
+  if (!aPre && bPre) return 1;
+  if (aPre && !bPre) return -1;
+
+  const preLen = Math.max(a.pre.length, b.pre.length);
+  for (let i = 0; i < preLen; i++) {
+    const x = a.pre[i];
+    const y = b.pre[i];
+    if (!x && !y) return 0;
+    if (!x) return -1;
+    if (!y) return 1;
+    if (x.type === y.type) {
+      if (x.value > y.value) return 1;
+      if (x.value < y.value) return -1;
+      continue;
+    }
+    // Semver rule: numeric prerelease identifiers have lower precedence
+    // than non-numeric identifiers.
+    return x.type === "num" ? -1 : 1;
   }
 
   return 0;

@@ -16,9 +16,21 @@ OUT_DIR="build/bin"
 APP_NAME="ResultV.app"
 APP_PATH="${OUT_DIR}/${APP_NAME}"
 
+# Auto-load local .env when the key is not already provided.
+if [ -z "${SUBSCRIPTION_ENCRYPT_KEY:-}" ] && [ -f ".env" ]; then
+  echo "==> loading env from .env"
+  set -a
+  # shellcheck disable=SC1091
+  source ".env"
+  set +a
+fi
+
 LDFLAGS=""
 if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
   LDFLAGS="-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=${SUBSCRIPTION_ENCRYPT_KEY}"
+fi
+if [ -n "${MANIFEST_URL_OVERRIDE:-}" ]; then
+  LDFLAGS="${LDFLAGS} -X resultproxy-wails/internal/updater.ManifestURLOverride=${MANIFEST_URL_OVERRIDE}"
 fi
 
 echo "==> wails build (darwin/universal)"
@@ -33,8 +45,19 @@ if [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 
+echo "==> stage libcronet.dylib (sing-box naive / Cronet)"
+LIBCRONET_SRC="build/darwin/libcronet.dylib"
+if [ ! -f "$LIBCRONET_SRC" ]; then
+  echo "ERROR: $LIBCRONET_SRC not found — run scripts/ensure-libcronet-macos.sh" >&2
+  exit 1
+fi
+cp -f "$LIBCRONET_SRC" "${APP_PATH}/Contents/MacOS/"
+
 if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
-  echo "==> codesign"
+  echo "==> codesign libcronet.dylib"
+  codesign --force --options runtime --timestamp \
+    --sign "$APPLE_DEVELOPER_ID" "${APP_PATH}/Contents/MacOS/libcronet.dylib"
+  echo "==> codesign app"
   codesign --force --deep --options runtime --timestamp \
     --sign "$APPLE_DEVELOPER_ID" "$APP_PATH"
 else

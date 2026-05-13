@@ -48,6 +48,8 @@ import {
   RefreshSubscription,
   AddSubscription,
   DeleteSubscription,
+  StartUpdate,
+  CancelUpdate,
 } from '../../wailsjs/go/main/App';
 
 export const wailsAPI = {
@@ -106,18 +108,32 @@ export const wailsAPI = {
     }
   },
 
-  importConfig: async (configData) => {
+  // Import an encrypted (RESULTPROXY2:) or legacy (RESULTPROXY:) export.
+  //
+  // Error semantics (returned from Go via Wails error string):
+  //   - "export password is required" → show password prompt
+  //   - "wrong export password or corrupted payload" → re-prompt
+  //   - "import payload is from an older unencrypted export" → show warning,
+  //     re-call with allowLegacy=true after user confirms
+  // For legacy imports, pass password="".
+  importConfig: async (configData, password = "", allowLegacy = false) => {
     try {
-      return await ImportConfig(configData);
+      return await ImportConfig(configData, password, allowLegacy);
     } catch (e) {
       console.error("wailsAPI.importConfig error:", e);
       throw e;
     }
   },
 
-  exportConfig: async () => {
+  // Export the current config as an encrypted RESULTPROXY2: payload. The
+  // password must be at least 8 characters — shorter passwords return
+  // "export password must be at least 8 characters".
+  exportConfig: async (password) => {
+    if (!password || password.length < 8) {
+      throw new Error("export password must be at least 8 characters");
+    }
     try {
-      return await ExportConfig();
+      return await ExportConfig(password);
     } catch (e) {
       console.error("wailsAPI.exportConfig error:", e);
       throw e;
@@ -130,7 +146,7 @@ export const wailsAPI = {
       return await GetStatus(); 
     } catch (e) {
       console.error("wailsAPI.getStatus error:", e);
-      return false;
+      throw e;
     }
   },
 
@@ -299,9 +315,15 @@ export const wailsAPI = {
   },
 
   
-  fetchSubscription: async (url) => {
+  // Fetch a subscription URL. Plaintext http:// is refused unless
+  // allowInsecure=true is passed explicitly. The Go side returns the error
+  // string "subscription URL uses plaintext HTTP — credentials and HWID
+  // would travel unencrypted" — UI dispatches on this to show a warning
+  // and re-call with allowInsecure=true. Insecure fetches also skip the
+  // x-hwid header (HWID over plaintext defeats its own purpose).
+  fetchSubscription: async (url, allowInsecure = false) => {
     try {
-      return await FetchSubscription(url);
+      return await FetchSubscription(url, allowInsecure);
     } catch (e) {
       console.error("wailsAPI.fetchSubscription error:", e);
       throw e;
@@ -326,9 +348,12 @@ export const wailsAPI = {
     }
   },
 
-  addSubscription: async (name, url) => {
+  // Add a subscription. See fetchSubscription for the http:// consent flow.
+  // The accepted-plaintext flag is persisted on the Subscription record so
+  // refreshSubscription doesn't need to re-prompt.
+  addSubscription: async (name, url, allowInsecure = false) => {
     try {
-      return await AddSubscription(name, url);
+      return await AddSubscription(name, url, allowInsecure);
     } catch (e) {
       console.error("wailsAPI.addSubscription error:", e);
       throw e;
@@ -341,6 +366,23 @@ export const wailsAPI = {
     } catch (e) {
       console.error("wailsAPI.deleteSubscription error:", e);
       throw e;
+    }
+  },
+
+  startUpdate: async () => {
+    try {
+      await StartUpdate();
+    } catch (e) {
+      console.error("wailsAPI.startUpdate error:", e);
+      throw e;
+    }
+  },
+
+  cancelUpdate: async () => {
+    try {
+      await CancelUpdate();
+    } catch (e) {
+      console.error("wailsAPI.cancelUpdate error:", e);
     }
   },
 };

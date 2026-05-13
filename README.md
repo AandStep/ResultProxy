@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.2-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.2.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/desktop-Wails-27272f.svg" alt="Wails">
   <img src="https://img.shields.io/badge/backend-Go-00ADD8.svg" alt="Go">
   <img src="https://img.shields.io/badge/frontend-React_18-61dafb.svg" alt="React">
@@ -33,7 +33,7 @@
 
 ## О проекте
 
-ResultV **3.1.2** — нативное настольное приложение на **[Wails v2](https://wails.io/)**. Интерфейс: **React 18**, **Vite**, **Tailwind CSS**; трафик обрабатывает бэкенд на **Go** и движок **[sing-box](https://github.com/SagerNet/sing-box)** (теги сборки заданы в `wails.json`). Локализация через **i18next** (русский и английский).
+ResultV **3.2.0** — нативное настольное приложение на **[Wails v2](https://wails.io/)**. Интерфейс: **React 18**, **Vite**, **Tailwind CSS**; трафик обрабатывает бэкенд на **Go** и движок **[sing-box](https://github.com/SagerNet/sing-box)** (теги сборки заданы в `wails.json`). Локализация через **i18next** (русский и английский).
 
 **Готовые сборки:** в GitHub Actions публикуются артефакты **Windows amd64** (portable `.exe` и установщик NSIS), **macOS** (`.dmg`) и **Linux** (`.AppImage`, `.deb`, `.rpm`) при push тега `v`*.
 
@@ -70,6 +70,8 @@ ResultV **3.1.2** — нативное настольное приложение
 - Подписки в **JSON** (Xray-формат с `outbounds[]` и sing-box-формат с `type`) разбираются для всех ключевых протоколов, включая `wireguard`/`amneziawg` с блоком `amnezia`.
 - Режим **Tunnel** в Windows требует **запуска от имени администратора**.
 - **Kill Switch** в Windows может требовать **прав администратора** для правил брандмауэра (`internal/system/killswitch_windows.go`).
+- Если после сбоя/принудительного завершения приложения интернет остается заблокирован, выполните в **PowerShell (Администратор)**:
+  `Get-NetFirewallRule -DisplayName 'ResultV_KillSwitch*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule`
 - Некоторые провайдеры подписок используют **HWID-ограничение устройств**; приложение передает стабильный `x-hwid` при загрузке подписок и показывает причину, если провайдер вернул пустой ответ по лимиту.
 - **При сбоях** просьба писать в ТГ @resultpoint_manager.
 

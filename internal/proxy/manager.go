@@ -29,6 +29,7 @@ import (
 
 	"resultproxy-wails/internal/logger"
 	sys "resultproxy-wails/internal/system"
+	"resultproxy-wails/internal/system/processtree"
 )
 
 
@@ -100,6 +101,20 @@ type Manager struct {
 	// so Disconnect/GetStatus can call CancelConnect without deadlock)
 	connectCancelMu sync.Mutex
 	connectCancel   context.CancelFunc
+
+	// procTracker watches the OS process tree and feeds child-process exe
+	// names back into the engine's app whitelist whenever the user has
+	// excluded a parent app (Steam, Discord, etc.). Lifecycle is bound to
+	// the connection: started on Connect, stopped on Disconnect.
+	procTracker *processtree.Monitor
+
+	// proxyDead is set by the health watchdog after consecutive probe
+	// failures against the proxy server. It surfaces "VPN is dead but the
+	// sing-box process is still alive" to the UI so it can offer to drop
+	// the connection + clear firewall rules. Reset to false on Connect and
+	// on probe recovery.
+	proxyDead    bool
+	healthCancel context.CancelFunc
 }
 
 var pingTCPProbe = PingProxy
@@ -152,6 +167,126 @@ func (m *Manager) Init(ctx context.Context) {
 
 	m.ctx = ctx
 	m.sysProxy = newSystemProxy(m.router)
+	m.procTracker = processtree.New(nil)
+	m.procTracker.OnChange(m.onProcessTreeChange)
+}
+
+// effectiveAppWhitelist merges user-specified roots with currently-running
+// descendants discovered by the process tree scan. Returns a deduped, ordered
+// list. Used at engine boot so the initial config already excludes the full
+// process family — without it the user would see one immediate hot-reload
+// right after every connect.
+func (m *Manager) effectiveAppWhitelist(userRoots []string) []string {
+	if len(userRoots) == 0 {
+		return nil
+	}
+	snap := processtree.Scan(userRoots)
+	return mergeAppWhitelist(userRoots, snap.Descendants)
+}
+
+// mergeAppWhitelist returns user roots followed by any descendants that
+// aren't already in the roots list. Descendants are matched case-insensitively
+// against root basenames, so "Steam.exe" + "steam.exe" descendant collapses
+// to one entry.
+func mergeAppWhitelist(roots, descendants []string) []string {
+	if len(roots) == 0 && len(descendants) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(roots)+len(descendants))
+	out := make([]string, 0, len(roots)+len(descendants))
+	for _, r := range roots {
+		key := strings.ToLower(strings.TrimSpace(r))
+		if key == "" {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, r)
+	}
+	for _, d := range descendants {
+		key := strings.ToLower(strings.TrimSpace(d))
+		if key == "" {
+			continue
+		}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, d)
+	}
+	return out
+}
+
+// onProcessTreeChange is the tracker callback. We deliberately do NOT
+// hot-reload sing-box from here: every reload tears down the TUN device
+// and breaks established TLS/QUIC sessions (Steam game traffic, Discord
+// voice, etc.), which is more disruptive than the missed exclusion.
+//
+// Instead we just log discovered descendants for diagnostics. The Connect
+// pre-scan already captures any process running at connection time, which
+// is the common case (user starts Steam, then connects). For descendants
+// that spawn after connect, the user reconnects to apply — same UX as
+// every other VPN client.
+//
+// We keep the tracker running so the data is available for a future
+// "Apply discovered exclusions" UI button if we ever want one.
+func (m *Manager) onProcessTreeChange(snap processtree.Snapshot) {
+	if len(snap.Descendants) == 0 {
+		return
+	}
+	m.mu.Lock()
+	known := m.appWhitelist
+	connected := m.connected
+	m.mu.Unlock()
+
+	if !connected {
+		return
+	}
+
+	known_set := make(map[string]struct{}, len(known))
+	for _, k := range known {
+		known_set[strings.ToLower(strings.TrimSpace(k))] = struct{}{}
+	}
+	var fresh []string
+	for _, d := range snap.Descendants {
+		if _, ok := known_set[strings.ToLower(d)]; ok {
+			continue
+		}
+		fresh = append(fresh, d)
+	}
+	if len(fresh) == 0 {
+		return
+	}
+	m.log.Info(fmt.Sprintf("[PROXY] Обнаружены новые дочерние процессы (не применены): %s. Переподключитесь чтобы добавить их в исключения.",
+		strings.Join(fresh, ", ")))
+}
+
+// startProcessTrackerLocked configures the tracker for the current user
+// whitelist and starts the watcher goroutine. Caller must hold m.mu.
+// No-op if user whitelist is empty (nothing to track).
+func (m *Manager) startProcessTrackerLocked() {
+	if m.procTracker == nil {
+		return
+	}
+	if len(m.appWhitelist) == 0 {
+		m.procTracker.Stop()
+		return
+	}
+	m.procTracker.SetRoots(m.appWhitelist)
+	ctx := m.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.procTracker.Start(ctx)
+}
+
+func (m *Manager) stopProcessTrackerLocked() {
+	if m.procTracker == nil {
+		return
+	}
+	m.procTracker.Stop()
 }
 
 
@@ -254,13 +389,19 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 		listenHost = "0.0.0.0"
 	}
 
+	// Pre-scan the OS process tree so the engine boots with all currently-
+	// running descendants of the user's excluded apps already in the
+	// whitelist. Without this we'd start the engine, then immediately hot-
+	// reload as soon as the tracker's first scan discovers existing children.
+	effectiveAppWhitelist := m.effectiveAppWhitelist(appWhitelist)
+
 	engineCfg := EngineConfig{
 		Proxy:        proxy,
 		Mode:         mode,
 		ListenAddr:   fmt.Sprintf("%s:%d", listenHost, actualLocalPort),
 		RoutingMode:  routingMode,
 		Whitelist:    whitelist,
-		AppWhitelist: appWhitelist,
+		AppWhitelist: effectiveAppWhitelist,
 		AdBlock:      adBlock,
 		KillSwitch:   killSwitch,
 		LocalPort:    actualLocalPort,
@@ -321,6 +462,7 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 				m.listenLAN = listenLAN
 				m.dnsServers = dnsServers
 				m.tunIPv4 = tunIPv4
+				m.startHealthWatchdogLocked(proxy, mode)
 				m.emitStatus()
 				m.mu.Unlock()
 				return ConnectResultDTO{
@@ -412,6 +554,8 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 	m.listenLAN = listenLAN
 	m.dnsServers = dnsServers
 	m.tunIPv4 = tunIPv4
+	m.startProcessTrackerLocked()
+	m.startHealthWatchdogLocked(proxy, mode)
 	m.emitStatus()
 	m.mu.Unlock()
 
@@ -475,13 +619,15 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 		listenHost = "0.0.0.0"
 	}
 
+	effectiveAppWhitelist := m.effectiveAppWhitelist(appWhitelist)
+
 	engineCfg := EngineConfig{
 		Proxy:        proxy,
 		Mode:         mode,
 		ListenAddr:   fmt.Sprintf("%s:%d", listenHost, actualLocalPort),
 		RoutingMode:  routingMode,
 		Whitelist:    whitelist,
-		AppWhitelist: appWhitelist,
+		AppWhitelist: effectiveAppWhitelist,
 		AdBlock:      adBlock,
 		KillSwitch:   killSwitch,
 		LocalPort:    actualLocalPort,
@@ -555,6 +701,8 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 	m.listenLAN = listenLAN
 	m.dnsServers = dnsServers
 	m.tunIPv4 = tunIPv4
+	m.startProcessTrackerLocked()
+	m.startHealthWatchdogLocked(proxy, mode)
 	m.emitStatus()
 
 	if proxy.SubscriptionURL != "" {
@@ -790,6 +938,57 @@ func runPostStartProbe(ctx context.Context, proxyTypeLower, ip string, port, loc
 				return "post_start_probe_failed", r
 			}
 		}
+	case "naiveproxy", "naive":
+		if mode == ProxyModeProxy {
+			proxyAddr := fmt.Sprintf("127.0.0.1:%d", localPort)
+			var ok bool
+			var r string
+			delays := []time.Duration{300 * time.Millisecond, 600 * time.Millisecond}
+			for i := 0; i < 3; i++ {
+				if ctx.Err() != nil {
+					return "cancelled", "connect cancelled"
+				}
+				ok, r = probeHTTPThroughProxyProbe(proxyAddr)
+				if ok {
+					break
+				}
+				if i < len(delays) {
+					if !sleepOrCancel(ctx, delays[i]) {
+						return "cancelled", "connect cancelled"
+					}
+				}
+			}
+			if !ok {
+				if r == "" {
+					r = "naiveproxy proxy e2e probe failed"
+				}
+				return "post_start_probe_failed", r
+			}
+		} else if mode == ProxyModeTunnel {
+			var ok bool
+			var r string
+			delays := []time.Duration{300 * time.Millisecond, 600 * time.Millisecond}
+			for i := 0; i < 3; i++ {
+				if ctx.Err() != nil {
+					return "cancelled", "connect cancelled"
+				}
+				ok, r = probeTunnelHTTPProbe()
+				if ok {
+					break
+				}
+				if i < len(delays) {
+					if !sleepOrCancel(ctx, delays[i]) {
+						return "cancelled", "connect cancelled"
+					}
+				}
+			}
+			if !ok {
+				if r == "" {
+					r = "naiveproxy e2e probe failed"
+				}
+				return "post_start_probe_failed", r
+			}
+		}
 	}
 
 	// General tunnel probe: verify internet works through the TUN before claiming
@@ -938,6 +1137,9 @@ func (m *Manager) Disconnect() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
+
 	if m.sysProxy != nil {
 		if err := m.sysProxy.Disable(); err != nil {
 			m.log.Warning(fmt.Sprintf("[СИСТЕМА] Ошибка отключения прокси: %v", err))
@@ -962,7 +1164,9 @@ func (m *Manager) disconnectLocked() error {
 
 	m.log.Info("[PROXY] Отключение...")
 
-	
+	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
+
 	if err := m.engine.Stop(); err != nil {
 		m.log.Error(fmt.Sprintf("[PROXY] Ошибка остановки движка: %v", err))
 	}
@@ -1088,7 +1292,7 @@ func (m *Manager) GetStatus() StatusDTO {
 
 	return StatusDTO{
 		IsConnected:      m.connected,
-		IsProxyDead:      false,
+		IsProxyDead:      m.proxyDead,
 		CurrentProxy:     m.proxy,
 		Mode:             m.mode,
 		Uptime:           uptime,
@@ -1185,6 +1389,115 @@ func (m *Manager) Ping(ip string, port int, proxyType string) PingResultDTO {
 }
 
 
+// startHealthWatchdogLocked starts a goroutine that pings the proxy server
+// every 5 seconds. After two consecutive failures it flips m.proxyDead and
+// emits a status event so the frontend can show the emergency modal — sing-box
+// can keep its local listener alive long after the upstream is gone, so
+// m.connected by itself is a bad signal.
+//
+// Caller must hold m.mu. Any in-flight watchdog is cancelled first.
+func (m *Manager) startHealthWatchdogLocked(proxy ProxyConfig, mode ProxyMode) {
+	if m.healthCancel != nil {
+		m.healthCancel()
+		m.healthCancel = nil
+	}
+	m.proxyDead = false
+
+	parentCtx := m.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	healthCtx, cancel := context.WithCancel(parentCtx)
+	m.healthCancel = cancel
+
+	go m.runHealthWatchdog(healthCtx, proxy, mode)
+}
+
+// stopHealthWatchdogLocked stops the watchdog goroutine and clears the dead
+// flag. Caller must hold m.mu.
+func (m *Manager) stopHealthWatchdogLocked() {
+	if m.healthCancel != nil {
+		m.healthCancel()
+		m.healthCancel = nil
+	}
+	m.proxyDead = false
+}
+
+func (m *Manager) runHealthWatchdog(ctx context.Context, proxy ProxyConfig, mode ProxyMode) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	const failuresBeforeDead = 2
+	consecutiveFails := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		// Snapshot under lock and bail early if disconnected.
+		m.mu.Lock()
+		if !m.connected {
+			m.mu.Unlock()
+			return
+		}
+		ks := m.killSwitch
+		m.mu.Unlock()
+
+		// Probe runs without the lock — TCP/UDP dial can block for seconds.
+		alive := m.probeProxyAlive(proxy, mode)
+
+		m.mu.Lock()
+		// Re-check after the probe: Disconnect may have run while we waited.
+		if !m.connected {
+			m.mu.Unlock()
+			return
+		}
+		wasDead := m.proxyDead
+		if alive {
+			consecutiveFails = 0
+			if wasDead {
+				m.proxyDead = false
+				m.log.Success("[KILL SWITCH] VPN-сервер снова доступен")
+				m.emitStatus()
+			}
+			m.mu.Unlock()
+			continue
+		}
+		consecutiveFails++
+		if consecutiveFails >= failuresBeforeDead && !wasDead {
+			m.proxyDead = true
+			if ks {
+				m.log.Warning(fmt.Sprintf("[KILL SWITCH] VPN-сервер %s:%d недоступен — kill switch блокирует весь трафик", proxy.IP, proxy.Port))
+			} else {
+				m.log.Warning(fmt.Sprintf("[PROXY] VPN-сервер %s:%d недоступен", proxy.IP, proxy.Port))
+			}
+			m.emitStatus()
+		}
+		m.mu.Unlock()
+	}
+}
+
+// probeProxyAlive picks the right probe for the proxy's transport. HYSTERIA2
+// and WireGuard speak UDP, the rest TCP — a plain TCP connect would falsely
+// pass/fail for UDP endpoints.
+func (m *Manager) probeProxyAlive(proxy ProxyConfig, _ ProxyMode) bool {
+	pt := strings.ToUpper(strings.TrimSpace(proxy.Type))
+	switch pt {
+	case "HYSTERIA2":
+		_, reachable, _, _ := pingHysteria2Probe(proxy.IP, proxy.Port)
+		return reachable
+	case "WIREGUARD", "AMNEZIAWG":
+		_, reachable, _ := pingWireGuardProbe(proxy.IP, proxy.Port)
+		return reachable
+	default:
+		_, reachable, _ := pingTCPProbe(proxy.IP, proxy.Port)
+		return reachable
+	}
+}
+
 func (m *Manager) ToggleKillSwitch(enable bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1215,11 +1528,14 @@ func (m *Manager) Shutdown() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
+
 	if m.connected {
 		m.engine.Stop()
 	}
 
-	
+
 	if m.sysProxy != nil {
 		m.sysProxy.DisableSync()
 	}
@@ -1240,7 +1556,7 @@ func (m *Manager) emitStatus() {
 	}
 	status := StatusDTO{
 		IsConnected:      m.connected,
-		IsProxyDead:      false,
+		IsProxyDead:      m.proxyDead,
 		CurrentProxy:     m.proxy,
 		Mode:             m.mode,
 		Uptime:           uptime,

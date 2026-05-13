@@ -82,7 +82,13 @@ type SingBoxEngine struct {
 	configPath string
 	instance   *box.Box
 
-	
+	// savedCfg / savedCtx are the original Start args, kept so ApplyAppWhitelist
+	// can rebuild the sing-box config in-place without reconstructing the
+	// caller's intent. They are only meaningful while running.
+	savedCfg EngineConfig
+	savedCtx context.Context
+
+
 	uploadBytes   atomic.Int64
 	downloadBytes atomic.Int64
 }
@@ -231,15 +237,45 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 		return fmt.Errorf("data directory: %w", err)
 	}
 
-	
+	if err := e.bootLocked(ctx, cfg, true); err != nil {
+		return err
+	}
+
+	e.savedCfg = cfg
+	e.savedCtx = ctx
+	e.running.Store(true)
+
+	if cfg.Proxy.SubscriptionURL != "" {
+		e.log.Success(fmt.Sprintf("[SING-BOX] Конфигурация готова (%s)", cfg.Mode))
+	} else {
+		e.log.Success(fmt.Sprintf("[SING-BOX] Конфигурация готова (%s → %s:%d)",
+			cfg.Mode, cfg.Proxy.IP, cfg.Proxy.Port))
+	}
+	return nil
+}
+
+// bootLocked builds the sing-box config from cfg, parses it, and starts a fresh
+// instance. Caller must hold e.mu. Stores instance/cancel/configPath in the
+// engine on success. Used by both Start (initial boot) and ApplyAppWhitelist
+// (in-place reload). When announceMode is true an info line about the chosen
+// mode is logged — silenced during reload to avoid noise.
+func (e *SingBoxEngine) bootLocked(ctx context.Context, cfg EngineConfig, announceMode bool) error {
 	var sbConfig SingBoxConfig
+	var buildErr error
 	switch cfg.Mode {
 	case ProxyModeTunnel:
-		sbConfig = BuildTunnelModeConfig(cfg)
-		e.log.Info("[SING-BOX] Режим: Туннелирование (TUN)")
+		sbConfig, buildErr = BuildTunnelModeConfig(cfg)
+		if announceMode {
+			e.log.Info("[SING-BOX] Режим: Туннелирование (TUN)")
+		}
 	default:
-		sbConfig = BuildProxyModeConfig(cfg)
-		e.log.Info("[SING-BOX] Режим: Системный прокси (mixed)")
+		sbConfig, buildErr = BuildProxyModeConfig(cfg)
+		if announceMode {
+			e.log.Info("[SING-BOX] Режим: Системный прокси (mixed)")
+		}
+	}
+	if buildErr != nil {
+		return fmt.Errorf("sing-box config: %w", buildErr)
 	}
 
 	configJSON, err := json.MarshalIndent(sbConfig, "", "  ")
@@ -247,18 +283,12 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 		return fmt.Errorf("marshaling sing-box config: %w", err)
 	}
 
-	
 	tmpDir := os.TempDir()
 	configPath := filepath.Join(tmpDir, "resultproxy-singbox.json")
 	if err := os.WriteFile(configPath, configJSON, 0o600); err != nil {
 		return fmt.Errorf("writing sing-box config: %w", err)
 	}
-	e.configPath = configPath
-	e.log.Info(fmt.Sprintf("[SING-BOX] Конфиг записан: %s", configPath))
 
-	
-	
-	
 	boxCtx, cancel := context.WithCancel(ctx)
 	boxCtx = include.Context(boxCtx)
 
@@ -278,10 +308,12 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 		return fmt.Errorf("creating sing-box instance: %w", err)
 	}
 
-	e.uploadBytes.Store(0)
-	e.downloadBytes.Store(0)
+	if announceMode {
+		// Counters reset on first start; preserved across reloads.
+		e.uploadBytes.Store(0)
+		e.downloadBytes.Store(0)
+	}
 
-	
 	tracker := &trafficTracker{
 		upload:   &e.uploadBytes,
 		download: &e.downloadBytes,
@@ -297,41 +329,24 @@ func (e *SingBoxEngine) Start(ctx context.Context, cfg EngineConfig) error {
 		cancel()
 		return fmt.Errorf("starting sing-box: %w", err)
 	}
+
+	e.configPath = configPath
 	e.instance = instance
 	e.cancel = cancel
-
-	e.running.Store(true)
-
-	if cfg.Proxy.SubscriptionURL != "" {
-		e.log.Success(fmt.Sprintf("[SING-BOX] Конфигурация готова (%s)", cfg.Mode))
-	} else {
-		e.log.Success(fmt.Sprintf("[SING-BOX] Конфигурация готова (%s → %s:%d)",
-			cfg.Mode, cfg.Proxy.IP, cfg.Proxy.Port))
-	}
-
 	return nil
 }
 
-
-func (e *SingBoxEngine) Stop() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if !e.running.Load() {
-		return nil
-	}
-
+// shutdownInstanceLocked cancels the running sing-box instance and removes the
+// on-disk config. Caller must hold e.mu. Does not flip e.running — that is the
+// caller's job, since Stop and reload have different semantics.
+func (e *SingBoxEngine) shutdownInstanceLocked() {
 	if e.cancel != nil {
 		e.cancel()
 		e.cancel = nil
 	}
-
 	if e.instance != nil {
 		inst := e.instance
 		e.instance = nil
-		// instance.Close() can block indefinitely when sing-box goroutines
-		// are stuck on network I/O (e.g. after system sleep/resume). Run it
-		// in a goroutine with a hard timeout so Shutdown never hangs.
 		closeDone := make(chan struct{}, 1)
 		go func() {
 			_ = inst.Close()
@@ -343,12 +358,79 @@ func (e *SingBoxEngine) Stop() error {
 			e.log.Warning("[SING-BOX] Close() timeout — принудительное завершение")
 		}
 	}
-
 	if e.configPath != "" {
 		os.Remove(e.configPath)
 		e.configPath = ""
 	}
+}
 
+// ApplyAppWhitelist replaces the active app whitelist by tearing down and
+// rebuilding the sing-box instance with merged paths. The traffic counters
+// and saved config are preserved across the reload. If the resulting whitelist
+// is identical to the current one, this is a no-op. Returns nil if the engine
+// is not running.
+//
+// There's a brief routing gap (~200-500ms) while the new instance starts —
+// existing TCP/UDP flows survive at the OS level but new app-level
+// connections during the gap may fail and retry. Acceptable trade-off
+// versus leaving exclusion rules stale.
+func (e *SingBoxEngine) ApplyAppWhitelist(paths []string) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !e.running.Load() {
+		return nil
+	}
+
+	if appWhitelistEqual(e.savedCfg.AppWhitelist, paths) {
+		return nil
+	}
+
+	newCfg := e.savedCfg
+	newCfg.AppWhitelist = append([]string(nil), paths...)
+
+	e.shutdownInstanceLocked()
+	if err := e.bootLocked(e.savedCtx, newCfg, false); err != nil {
+		// Reload failed — engine is now stopped. Flip running so callers see
+		// a consistent state and don't keep applying changes to a dead engine.
+		e.running.Store(false)
+		e.log.Error(fmt.Sprintf("[SING-BOX] Hot-reload failed: %v", err))
+		return err
+	}
+
+	e.savedCfg = newCfg
+	e.log.Info(fmt.Sprintf("[SING-BOX] App whitelist обновлён: %d записей", len(paths)))
+	return nil
+}
+
+func appWhitelistEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(a))
+	for _, x := range a {
+		seen[strings.ToLower(strings.TrimSpace(x))] = struct{}{}
+	}
+	for _, x := range b {
+		if _, ok := seen[strings.ToLower(strings.TrimSpace(x))]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+
+func (e *SingBoxEngine) Stop() error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !e.running.Load() {
+		return nil
+	}
+
+	e.shutdownInstanceLocked()
+	e.savedCfg = EngineConfig{}
+	e.savedCtx = nil
 	e.running.Store(false)
 	e.log.Info("[SING-BOX] Остановлен")
 

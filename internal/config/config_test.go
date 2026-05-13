@@ -16,6 +16,7 @@
 package config
 
 import (
+	"crypto/sha256"
 	"errors"
 	"os"
 	"path/filepath"
@@ -337,6 +338,73 @@ func TestManagerInitPrefersNewConfigOverLegacy(t *testing.T) {
 	}
 	if _, err := os.Stat(legacyPath); err != nil {
 		t.Fatalf("legacy config should remain untouched when new exists: %v", err)
+	}
+}
+
+// End-to-end migration: a config written by an old build (using only the
+// legacy sha256 key) must be re-encrypted under the new PBKDF2-derived key
+// after the first Init() of a new build. Verified by checking that:
+//   1. The file decrypts and content is intact.
+//   2. The on-disk bytes change (re-write happened).
+//   3. After migration the CryptoService no longer reports needsReencrypt.
+//   4. The migrated file decrypts with the NEW key alone (legacy not needed).
+func TestManagerInitMigratesLegacyEncryptionToNewKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "proxy_config.json")
+
+	// Step 1: write a config encrypted with the legacy-only key (key == legacyKey).
+	legacyKey := sha256.Sum256([]byte("e2e-migration-machine" + keySalt))
+	legacyCS := &CryptoService{key: legacyKey, legacyKey: legacyKey}
+	legacyCfg := DefaultConfig()
+	legacyCfg.Proxies = []ProxyEntry{{ID: "m1", IP: "9.9.9.9", Port: 443, Type: "http", Password: "secret"}}
+	enc, err := legacyCS.Encrypt(legacyCfg)
+	if err != nil {
+		t.Fatalf("legacy encrypt: %v", err)
+	}
+	if err := os.WriteFile(configPath, []byte(enc), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+	beforeBytes, _ := os.ReadFile(configPath)
+
+	// Step 2: new build — fresh primary key, same legacyKey.
+	migrationCS := &CryptoService{
+		key:       sha256.Sum256([]byte("post-migration-salt")),
+		legacyKey: legacyKey,
+	}
+	mgr := NewManager(migrationCS)
+	if err := mgr.Init(tmpDir); err != nil {
+		t.Fatalf("Init failed: %v", err)
+	}
+
+	// Step 3: confirm content preserved.
+	cfg := mgr.GetConfig()
+	if len(cfg.Proxies) != 1 || cfg.Proxies[0].Password != "secret" {
+		t.Fatalf("config content lost during migration: %+v", cfg.Proxies)
+	}
+
+	// Step 4: file bytes must have changed (Manager re-saved under new key).
+	afterBytes, _ := os.ReadFile(configPath)
+	if string(beforeBytes) == string(afterBytes) {
+		t.Fatal("expected config file to be rewritten after migration, bytes unchanged")
+	}
+
+	// Step 5: needsReencrypt cleared.
+	if migrationCS.NeedsReencrypt() {
+		t.Fatal("needsReencrypt should be cleared after Manager re-saved")
+	}
+
+	// Step 6: a fresh service WITHOUT the legacy key must now decrypt — the
+	// file is encrypted under the new primary key.
+	verifyCS := &CryptoService{
+		key:       migrationCS.key,
+		legacyKey: sha256.Sum256([]byte("totally unrelated")),
+	}
+	verifyMgr := NewManager(verifyCS)
+	if err := verifyMgr.Init(tmpDir); err != nil {
+		t.Fatalf("post-migration load without legacy key failed: %v", err)
+	}
+	if verifyCS.NeedsReencrypt() {
+		t.Fatal("post-migration load should not require another migration")
 	}
 }
 

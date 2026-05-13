@@ -21,6 +21,9 @@ LDFLAGS=""
 if [ -n "${SUBSCRIPTION_ENCRYPT_KEY:-}" ]; then
   LDFLAGS="-X resultproxy-wails/internal/proxy.subscriptionEncryptKey=${SUBSCRIPTION_ENCRYPT_KEY}"
 fi
+if [ -n "${MANIFEST_URL_OVERRIDE:-}" ]; then
+  LDFLAGS="${LDFLAGS} -X resultproxy-wails/internal/updater.ManifestURLOverride=${MANIFEST_URL_OVERRIDE}"
+fi
 
 echo "==> wails build (linux/amd64) version=$VERSION"
 # webkit2_41 selects libwebkit2gtk-4.1 (Ubuntu 22.04+/24.04, Debian 12+).
@@ -38,6 +41,14 @@ if [ -z "$BIN_PATH" ]; then
   exit 1
 fi
 
+echo "==> stage libcronet.so (sing-box naive / Cronet)"
+LIBCRONET_SRC="build/linux/libcronet.so"
+if [ ! -f "$LIBCRONET_SRC" ]; then
+  echo "ERROR: $LIBCRONET_SRC not found — run scripts/ensure-libcronet-linux.sh" >&2
+  exit 1
+fi
+cp -f "$LIBCRONET_SRC" "$(dirname "$BIN_PATH")/"
+
 echo "==> nfpm pkg (.deb)"
 if command -v nfpm >/dev/null 2>&1; then
   nfpm pkg --packager deb --target "$OUT_DIR/" --config build/linux/nfpm.yaml
@@ -52,6 +63,7 @@ if command -v linuxdeploy >/dev/null 2>&1; then
   rm -rf "$APPDIR"
   mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/share/applications" "$APPDIR/usr/share/icons/hicolor/512x512/apps"
   cp "$BIN_PATH" "$APPDIR/usr/bin/resultv"
+  cp -f "$LIBCRONET_SRC" "$APPDIR/usr/bin/"
   # AppImage requires Exec= to be a relative command (just "resultv"),
   # not the absolute /usr/bin/resultv used by the .deb/.rpm packages.
   sed 's|^Exec=.*|Exec=resultv %u|' build/linux/resultv.desktop \

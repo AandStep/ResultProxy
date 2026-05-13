@@ -41,7 +41,7 @@ import AppSelect from "../components/ui/AppSelect";
 import wailsAPI from "../utils/wailsAPI";
 
 const PLAIN_TYPES = ["HTTP", "HTTPS", "SOCKS5"];
-const VPN_TYPES_LIST = ["VLESS", "VMESS", "TROJAN", "SS", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2"];
+const VPN_TYPES_LIST = ["VLESS", "VMESS", "TROJAN", "SS", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "NAIVEPROXY"];
 const VPN_SECURITY_OPTIONS = ["none", "tls", "reality"];
 
 const AMNEZIA_INT_KEYS = ["jc", "jmin", "jmax", "s1", "s2", "s3", "s4", "h1", "h2", "h3", "h4", "itime"];
@@ -521,6 +521,13 @@ export const AddProxyView = () => {
     obfsPassword: "",
   });
 
+  const [naive, setNaive] = useState({
+    sni: "",
+    insecure: false,
+    listen: "",
+    log: "",
+  });
+
   const [wg, setWg] = useState({
     address: "10.0.0.2/32",
     privateKey: "",
@@ -589,6 +596,17 @@ export const AddProxyView = () => {
           obfsPassword: String(ex.obfs_password || ex.obfsPassword || ""),
         });
 
+        if (String(editingProxy.type || "").toUpperCase() === "NAIVEPROXY") {
+          setNaive({
+            sni: String(ex.sni || ex.server_name || ""),
+            insecure: Boolean(ex.insecure),
+            listen: String(ex.naive_listen || ""),
+            log: String(ex.naive_log || ""),
+          });
+        } else {
+          setNaive({ sni: "", insecure: false, listen: "", log: "" });
+        }
+
         const wgAddr = Array.isArray(ex.address) ? ex.address.join(",") : String(ex.address || "");
         const wgAllowed = Array.isArray(ex.allowed_ips) ? ex.allowed_ips.join(",") : String(ex.allowed_ips || "");
         const amRaw = ex.amnezia;
@@ -644,6 +662,8 @@ export const AddProxyView = () => {
         obfsPassword: "",
       });
 
+      setNaive({ sni: "", insecure: false, listen: "", log: "" });
+
       setWg({
         address: "10.0.0.2/32",
         privateKey: "",
@@ -667,7 +687,7 @@ export const AddProxyView = () => {
     if (!formData.ip || !formData.port) return;
 
     const tUpper = String(formData.type || "").toUpperCase();
-    const isManualVpn = ["WIREGUARD", "AMNEZIAWG", "HYSTERIA2"].includes(tUpper);
+    const isManualVpn = ["WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "NAIVEPROXY"].includes(tUpper);
 
     if (isVpnEditMode) {
       const vpnType = String(formData.type || "").toUpperCase();
@@ -691,6 +711,16 @@ export const AddProxyView = () => {
           delete ex.obfs_type;
           delete ex.obfs_password;
         }
+      } else if (vpnType === "NAIVEPROXY") {
+        const base = parseProxyExtra(formData.extra);
+        ex = {
+          ...base,
+          sni: (naive.sni || "").trim(),
+          insecure: Boolean(naive.insecure),
+        };
+        if ((naive.listen || "").trim()) ex.naive_listen = naive.listen.trim();
+        if ((naive.log || "").trim()) ex.naive_log = naive.log.trim();
+        delete ex.fp;
       } else if (vpnType === "WIREGUARD" || vpnType === "AMNEZIAWG") {
         const base = parseProxyExtra(formData.extra);
         const addr = (wg.address || "")
@@ -774,6 +804,11 @@ export const AddProxyView = () => {
           extra.obfs_type = (hy2.obfsType || "").trim();
           extra.obfs_password = (hy2.obfsPassword || "").trim();
         }
+      } else if (tUpper === "NAIVEPROXY") {
+        extra.sni = (naive.sni || "").trim();
+        extra.insecure = Boolean(naive.insecure);
+        if ((naive.listen || "").trim()) extra.naive_listen = naive.listen.trim();
+        if ((naive.log || "").trim()) extra.naive_log = naive.log.trim();
       } else {
         extra.address = (wg.address || "")
           .split(/[,;\n\r\t]+/g)
@@ -827,7 +862,7 @@ export const AddProxyView = () => {
   const vpnEditType = String(formData.type || "").toUpperCase();
   const showVpnTransport = ["VLESS", "VMESS", "TROJAN"].includes(vpnEditType);
   const showVpnSecurity = ["VLESS", "VMESS"].includes(vpnEditType);
-  const showManualVpn = ["WIREGUARD", "AMNEZIAWG"].includes(vpnEditType);
+  const showManualVpn = ["WIREGUARD", "AMNEZIAWG", "NAIVEPROXY"].includes(vpnEditType);
   const vpnNetworkChangedFromImport =
     isVpnEditMode &&
     showVpnTransport &&
@@ -839,6 +874,9 @@ export const AddProxyView = () => {
     TROJAN: t("add.subscriptionPlaceholderTrojan") || "https://example.com/sub или trojan://...",
     SS: t("add.subscriptionPlaceholderSs") || "https://example.com/sub или ss://...",
     HYSTERIA2: t("add.subscriptionPlaceholderHy2") || "https://example.com/sub или hy2://...",
+    NAIVEPROXY:
+      t("add.subscriptionPlaceholderNaive") ||
+      "naive+https://... или JSON {\"listen\":\"...\",\"proxy\":\"https://...\"}",
     WIREGUARD: t("add.subscriptionPlaceholderWireguard") || "https://example.com/sub или wireguard://...",
     AMNEZIAWG: t("add.subscriptionPlaceholderAmneziawg") || "https://example.com/sub или amneziawg://...",
   };
@@ -869,7 +907,7 @@ export const AddProxyView = () => {
             <span className="text-sm">{t("add.fromFile")}</span>
             <input
               type="file"
-              accept=".txt,.csv,.conf"
+              accept=".txt,.csv,.conf,.json"
               className="hidden"
               onChange={handleFileImport}
             />
@@ -1130,6 +1168,81 @@ export const AddProxyView = () => {
                         onChange={(e) => setHy2({ ...hy2, obfsPassword: e.target.value })}
                       />
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {vpnEditType === "NAIVEPROXY" && (
+                <div className="space-y-3">
+                  <p className="text-xs text-zinc-500">{t("add.naiveTlsHint")}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        {t("add.naiveUser") || "Username"}
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:border-[#007E3A] transition-colors"
+                        value={formData.username || ""}
+                        onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                        autoComplete="off"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-zinc-400 mb-2">
+                        {t("add.naivePass") || "Password"}
+                      </label>
+                      <input
+                        type="password"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#007E3A] transition-colors"
+                        value={formData.password || ""}
+                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      {t("add.naiveSni") || "SNI (TLS server name)"}
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:border-[#007E3A] transition-colors"
+                      value={naive.sni}
+                      onChange={(e) => setNaive({ ...naive, sni: e.target.value })}
+                      placeholder="example.com"
+                    />
+                  </div>
+                  <label className="flex items-center gap-3 text-sm text-zinc-200">
+                    <input
+                      type="checkbox"
+                      className="accent-[#007E3A]"
+                      checked={naive.insecure}
+                      onChange={(e) => setNaive({ ...naive, insecure: e.target.checked })}
+                    />
+                    {t("add.naiveInsecure") || "Insecure (not supported for naive in sing-box)"}
+                  </label>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      {t("add.naiveListen") || "Listen (reference, optional)"}
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors"
+                      value={naive.listen}
+                      onChange={(e) => setNaive({ ...naive, listen: e.target.value })}
+                      placeholder="socks://127.0.0.1:1080"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-zinc-400 mb-2">
+                      {t("add.naiveLog") || "Log (reference, optional)"}
+                    </label>
+                    <input
+                      type="text"
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors"
+                      value={naive.log}
+                      onChange={(e) => setNaive({ ...naive, log: e.target.value })}
+                    />
                   </div>
                 </div>
               )}
@@ -1683,6 +1796,81 @@ export const AddProxyView = () => {
                                 onChange={(e) => setHy2({ ...hy2, obfsPassword: e.target.value })}
                               />
                             </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {vpnEditType === "NAIVEPROXY" && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-zinc-500">{t("add.naiveTlsHint")}</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                {t("add.naiveUser") || "Username"}
+                              </label>
+                              <input
+                                type="text"
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:border-[#007E3A] transition-colors"
+                                value={formData.username || ""}
+                                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                autoComplete="off"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-zinc-400 mb-2">
+                                {t("add.naivePass") || "Password"}
+                              </label>
+                              <input
+                                type="password"
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none focus:border-[#007E3A] transition-colors"
+                                value={formData.password || ""}
+                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-400 mb-2">
+                              {t("add.naiveSni") || "SNI (TLS server name)"}
+                            </label>
+                            <input
+                              type="text"
+                              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-sm outline-none focus:border-[#007E3A] transition-colors"
+                              value={naive.sni}
+                              onChange={(e) => setNaive({ ...naive, sni: e.target.value })}
+                              placeholder="example.com"
+                            />
+                          </div>
+                          <label className="flex items-center gap-3 text-sm text-zinc-200">
+                            <input
+                              type="checkbox"
+                              className="accent-[#007E3A]"
+                              checked={naive.insecure}
+                              onChange={(e) => setNaive({ ...naive, insecure: e.target.checked })}
+                            />
+                            {t("add.naiveInsecure") || "Insecure (not supported for naive in sing-box)"}
+                          </label>
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-400 mb-2">
+                              {t("add.naiveListen") || "Listen (reference, optional)"}
+                            </label>
+                            <input
+                              type="text"
+                              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors"
+                              value={naive.listen}
+                              onChange={(e) => setNaive({ ...naive, listen: e.target.value })}
+                              placeholder="socks://127.0.0.1:1080"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-400 mb-2">
+                              {t("add.naiveLog") || "Log (reference, optional)"}
+                            </label>
+                            <input
+                              type="text"
+                              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white font-mono text-xs outline-none focus:border-[#007E3A] transition-colors"
+                              value={naive.log}
+                              onChange={(e) => setNaive({ ...naive, log: e.target.value })}
+                            />
                           </div>
                         </div>
                       )}

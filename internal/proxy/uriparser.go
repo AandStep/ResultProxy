@@ -76,6 +76,10 @@ func ParseProxyURI(line string) (config.ProxyEntry, error) {
 		return parseWireGuardURI(line)
 	case strings.HasPrefix(line, "awg://"):
 		return parseAmneziaWGURI(line)
+	case strings.HasPrefix(line, "naive+https://"):
+		return parseNaiveURI(line)
+	case strings.HasPrefix(line, "naive://"):
+		return parseNaiveURI(line)
 	default:
 		return config.ProxyEntry{}, fmt.Errorf("unsupported URI scheme: %s", truncate(line, 30))
 	}
@@ -184,7 +188,11 @@ func parseSubscriptionJSON(body string) ([]config.ProxyEntry, bool) {
 
 func parseJSONSubscriptionEntry(obj map[string]interface{}) []config.ProxyEntry {
 	var entries []config.ProxyEntry
-	
+
+	if naiveEntries, ok := tryParseNaiveClientConfigMap(obj); ok {
+		return naiveEntries
+	}
+
 	// Иногда obj сам является outbound'ом
 	protocol := asString(obj["protocol"])
 	if protocol == "" {
@@ -526,6 +534,51 @@ func parseJSONOutbound(outbound map[string]interface{}, name string) (config.Pro
 		}, host != "" && port > 0
 	case "wireguard", "amneziawg":
 		return parseJSONWireGuardOutbound(outbound, settings, name, protocol)
+	case "naive":
+		host := asString(outbound["server"])
+		port := asInt(outbound["server_port"])
+		if host == "" {
+			return config.ProxyEntry{}, false
+		}
+		if port == 0 {
+			port = 443
+		}
+		username := asString(outbound["username"])
+		password := asString(outbound["password"])
+		if name == "" {
+			name = "Naive"
+		}
+		extra := map[string]interface{}{}
+		if tls, ok := asMap(outbound["tls"]); ok {
+			if sn := asString(tls["server_name"]); sn != "" {
+				extra["sni"] = sn
+			}
+			if insecure, ok := tls["insecure"].(bool); ok && insecure {
+				extra["insecure"] = true
+			}
+			if alpn, ok := asSlice(tls["alpn"]); ok && len(alpn) > 0 {
+				var parts []string
+				for _, a := range alpn {
+					if s := asString(a); s != "" {
+						parts = append(parts, s)
+					}
+				}
+				if len(parts) > 0 {
+					extra["alpn"] = strings.Join(parts, ",")
+				}
+			}
+		}
+		extraJSON, _ := json.Marshal(extra)
+		return config.ProxyEntry{
+			IP:       host,
+			Port:     port,
+			Type:     "NAIVEPROXY",
+			Name:     name,
+			Username: username,
+			Password: password,
+			Country:  countryFromNameAndHost(name, host),
+			Extra:    extraJSON,
+		}, username != "" && password != ""
 	default:
 		return config.ProxyEntry{}, false
 	}
@@ -1027,6 +1080,154 @@ func parseTrojanURI(uri string) (config.ProxyEntry, error) {
 		Name:     name,
 		Password: password,
 		Country:  countryFromNameAndHost(name, thost),
+		Extra:    extraJSON,
+	}, nil
+}
+
+// tryParseNaiveClientConfigMap detects naiveproxy client JSON such as
+// {"listen":"socks://127.0.0.1:1080","proxy":"https://user:pass@host:443","log":""}.
+func tryParseNaiveClientConfigMap(obj map[string]interface{}) ([]config.ProxyEntry, bool) {
+	if asString(obj["protocol"]) != "" || asString(obj["type"]) != "" {
+		return nil, false
+	}
+	if _, ok := obj["outbounds"]; ok {
+		return nil, false
+	}
+	proxyStr := strings.TrimSpace(asString(obj["proxy"]))
+	if proxyStr == "" {
+		return nil, false
+	}
+	_, hasListen := obj["listen"]
+	_, hasLog := obj["log"]
+	onlyProxyKey := len(obj) == 1
+	if !hasListen && !hasLog && !onlyProxyKey {
+		return nil, false
+	}
+	low := strings.ToLower(proxyStr)
+	if !strings.HasPrefix(low, "https://") && !strings.HasPrefix(low, "http://") {
+		return nil, false
+	}
+	entry, err := naiveProxyEntryFromProxyURL(proxyStr, obj)
+	if err != nil {
+		return nil, false
+	}
+	return []config.ProxyEntry{entry}, true
+}
+
+func naiveProxyEntryFromProxyURL(proxyURL string, meta map[string]interface{}) (config.ProxyEntry, error) {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return config.ProxyEntry{}, err
+	}
+	host := u.Hostname()
+	if host == "" {
+		return config.ProxyEntry{}, fmt.Errorf("naive proxy URL has no host")
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		if strings.EqualFold(u.Scheme, "http") {
+			port = 80
+		} else {
+			port = 443
+		}
+	}
+	username := u.User.Username()
+	password, _ := u.User.Password()
+	if username == "" || password == "" {
+		return config.ProxyEntry{}, fmt.Errorf("naive proxy URL requires username and password")
+	}
+	name := "NaiveProxy"
+	extra := map[string]interface{}{}
+	if meta != nil {
+		if listen := strings.TrimSpace(asString(meta["listen"])); listen != "" {
+			extra["naive_listen"] = listen
+		}
+		if s := strings.TrimSpace(asString(meta["log"])); s != "" {
+			extra["naive_log"] = s
+		}
+	}
+	params := u.Query()
+	if sni := firstNonEmpty(params.Get("sni"), params.Get("host")); sni != "" {
+		extra["sni"] = sni
+	}
+	if parseBoolFlexible(firstNonEmpty(
+		params.Get("insecure"),
+		params.Get("allowInsecure"),
+		params.Get("allow_insecure"),
+	)) {
+		extra["insecure"] = true
+	}
+	extraJSON, _ := json.Marshal(extra)
+	return config.ProxyEntry{
+		IP:       host,
+		Port:     port,
+		Type:     "NAIVEPROXY",
+		Name:     name,
+		Username: username,
+		Password: password,
+		Country:  countryFromNameAndHost(name, host),
+		Extra:    extraJSON,
+	}, nil
+}
+
+func parseNaiveURI(uri string) (config.ProxyEntry, error) {
+	raw := strings.TrimSpace(uri)
+	var toParse string
+	switch {
+	case strings.HasPrefix(raw, "naive+https://"):
+		toParse = strings.TrimPrefix(raw, "naive+")
+	case strings.HasPrefix(raw, "naive://"):
+		toParse = strings.Replace(raw, "naive://", "https://", 1)
+	default:
+		return config.ProxyEntry{}, fmt.Errorf("invalid naive URI")
+	}
+	u, err := url.Parse(toParse)
+	if err != nil {
+		return config.ProxyEntry{}, fmt.Errorf("parsing naive URI: %w", err)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return config.ProxyEntry{}, fmt.Errorf("naive URI has no host")
+	}
+	port, _ := strconv.Atoi(u.Port())
+	if port == 0 {
+		port = 443
+	}
+	username := u.User.Username()
+	password, _ := u.User.Password()
+	if username == "" || password == "" {
+		return config.ProxyEntry{}, fmt.Errorf("naive URI requires username and password")
+	}
+	name := "NaiveProxy"
+	if u.Fragment != "" {
+		name, _ = url.PathUnescape(u.Fragment)
+	}
+	params := u.Query()
+	extra := map[string]interface{}{}
+	if sni := firstNonEmpty(
+		params.Get("sni"),
+		params.Get("serverName"),
+		params.Get("server_name"),
+		params.Get("peer"),
+	); sni != "" {
+		extra["sni"] = sni
+	}
+	if parseBoolFlexible(firstNonEmpty(
+		params.Get("insecure"),
+		params.Get("allowInsecure"),
+		params.Get("allow_insecure"),
+	)) {
+		extra["insecure"] = true
+	}
+	extraJSON, _ := json.Marshal(extra)
+	return config.ProxyEntry{
+		IP:       host,
+		Port:     port,
+		Type:     "NAIVEPROXY",
+		Name:     name,
+		Username: username,
+		Password: password,
+		Country:  countryFromNameAndHost(name, host),
 		Extra:    extraJSON,
 	}, nil
 }

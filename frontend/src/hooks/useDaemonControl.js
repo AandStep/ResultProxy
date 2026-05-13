@@ -407,5 +407,11 @@ export const useDaemonControl = (
         isSwitchingRef.current = false;
     }, [setIsConnecting, setIsDisconnecting, setIsConnected, setFailedProxy, isSwitchingRef]);
 
-    return { disconnectOnly, toggleConnection, selectAndConnect, deleteProxy, cancelConnect };
+    return {
+        disconnectOnly,
+        toggleConnection,
+        selectAndConnect,
+        deleteProxy,
+        cancelConnect,
+    };
 };

@@ -27,7 +27,7 @@ func NewKillSwitch() KillSwitch {
 	return &StubKillSwitch{}
 }
 
-func (ks *StubKillSwitch) Enable(proxyAddr string) error {
+func (ks *StubKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 	return fmt.Errorf("kill switch not implemented on this platform")
 }
 

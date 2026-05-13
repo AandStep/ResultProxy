@@ -10,6 +10,18 @@ import (
 	"strings"
 )
 
+// subscriptionEncryptKey is injected via -ldflags at build time (see
+// release.yml). The SAME key ships in every distributed binary — anyone who
+// extracts the string from the binary (a `strings` invocation suffices) can
+// decrypt every RVSUB1 payload generated for any user of any provider.
+//
+// IMPORTANT: this is NOT a cryptographic privacy boundary. It's an
+// obfuscation layer that hides subscription URLs from casual eyeballs (chat
+// history, support tickets), nothing more. Do not market RVSUB1 as
+// "encrypted subscription links" externally — the only real confidentiality
+// guarantee is HTTPS transport. A future RVSUB2 schema (per-provider key
+// derivation, or asymmetric crypto) would be needed for that, see the
+// security audit notes in this repo.
 var subscriptionEncryptKey string
 
 const subscriptionMagic = "RVSUB1:"

@@ -35,7 +35,7 @@ func TestVLESSXUDPOutboundShapeSmoke(t *testing.T) {
 		"flow":     "xtls-rprx-vision",
 	}
 	raw, _ := json.Marshal(extra)
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Proxy:      ProxyConfig{IP: "1.2.3.4", Port: 443, Type: "VLESS", Extra: raw},
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14081",
@@ -65,7 +65,7 @@ func TestHysteria2QUICShapeSmoke(t *testing.T) {
 		"down_mbps": 200,
 	}
 	raw, _ := json.Marshal(extra)
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Proxy:      ProxyConfig{IP: "example.com", Port: 443, Type: "HYSTERIA2", Extra: raw},
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14082",
@@ -99,7 +99,7 @@ func TestVMessUDPShapeSmoke(t *testing.T) {
 		"scy":                  "auto",
 	}
 	raw, _ := json.Marshal(extra)
-	cfg := BuildProxyModeConfig(EngineConfig{
+	cfg := mustBuildProxyModeConfig(t, EngineConfig{
 		Proxy:      ProxyConfig{IP: "1.2.3.4", Port: 443, Type: "VMESS", Extra: raw},
 		Mode:       ProxyModeProxy,
 		ListenAddr: "127.0.0.1:14083",

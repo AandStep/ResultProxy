@@ -73,6 +73,11 @@ type Engine interface {
 	IsRunning() bool
 
 	GetTrafficStats() (up, down int64)
+
+	// ApplyAppWhitelist swaps the active per-app exclusion list without
+	// disconnecting. No-op when not running. Implementations may briefly
+	// interrupt traffic while rebuilding the routing config.
+	ApplyAppWhitelist(paths []string) error
 }
 
 type SingBoxConfig struct {
@@ -133,28 +138,28 @@ type SBInbound struct {
 }
 
 type SBOutbound struct {
-	Type       string           `json:"type"`
-	Tag        string           `json:"tag"`
-	Server     string           `json:"server,omitempty"`
-	ServerPort int              `json:"server_port,omitempty"`
-	Username   string           `json:"username,omitempty"`
-	Password   string           `json:"password,omitempty"`
-	Method     string           `json:"method,omitempty"`
-	Version    string           `json:"version,omitempty"`
-	UUID       string           `json:"uuid,omitempty"`
-	AlterId    int              `json:"alter_id,omitempty"`
-	Flow       string           `json:"flow,omitempty"`
-	PacketEncoding      string `json:"packet_encoding,omitempty"`
-	GlobalPadding       bool   `json:"global_padding,omitempty"`
-	AuthenticatedLength bool   `json:"authenticated_length,omitempty"`
-	Security            string `json:"security,omitempty"`
-	UpMbps     int              `json:"up_mbps,omitempty"`
-	DownMbps   int              `json:"down_mbps,omitempty"`
-	Obfs       *SBHysteria2Obfs `json:"obfs,omitempty"`
+	Type                string           `json:"type"`
+	Tag                 string           `json:"tag"`
+	Server              string           `json:"server,omitempty"`
+	ServerPort          int              `json:"server_port,omitempty"`
+	Username            string           `json:"username,omitempty"`
+	Password            string           `json:"password,omitempty"`
+	Method              string           `json:"method,omitempty"`
+	Version             string           `json:"version,omitempty"`
+	UUID                string           `json:"uuid,omitempty"`
+	AlterId             int              `json:"alter_id,omitempty"`
+	Flow                string           `json:"flow,omitempty"`
+	PacketEncoding      string           `json:"packet_encoding,omitempty"`
+	GlobalPadding       bool             `json:"global_padding,omitempty"`
+	AuthenticatedLength bool             `json:"authenticated_length,omitempty"`
+	Security            string           `json:"security,omitempty"`
+	UpMbps              int              `json:"up_mbps,omitempty"`
+	DownMbps            int              `json:"down_mbps,omitempty"`
+	Obfs                *SBHysteria2Obfs `json:"obfs,omitempty"`
 
 	TLS       *SBOutboundTLS       `json:"tls,omitempty"`
 	Transport *SBOutboundTransport `json:"transport,omitempty"`
-	
+
 	DomainStrategy string `json:"domain_strategy,omitempty"`
 }
 
@@ -203,13 +208,13 @@ type SBWireGuardPeer struct {
 }
 
 type SBWireGuardAmnezia struct {
-	JC    int    `json:"jc,omitempty"`
-	JMin  int    `json:"jmin,omitempty"`
-	JMax  int    `json:"jmax,omitempty"`
-	S1    int    `json:"s1,omitempty"`
-	S2    int    `json:"s2,omitempty"`
-	S3    int    `json:"s3,omitempty"`
-	S4    int    `json:"s4,omitempty"`
+	JC   int `json:"jc,omitempty"`
+	JMin int `json:"jmin,omitempty"`
+	JMax int `json:"jmax,omitempty"`
+	S1   int `json:"s1,omitempty"`
+	S2   int `json:"s2,omitempty"`
+	S3   int `json:"s3,omitempty"`
+	S4   int `json:"s4,omitempty"`
 	// H1-H4 are emitted as strings ("N" or "low-high") so that
 	// upstream sing-box-extended (>= v1.13.11-extended-2.0.0) can
 	// parse them into *Xbadoption.Range and randomize per packet
@@ -238,7 +243,6 @@ type SBReality struct {
 	Enabled   bool   `json:"enabled"`
 	PublicKey string `json:"public_key"`
 	ShortID   string `json:"short_id,omitempty"`
-	SpiderX   string `json:"spider_x,omitempty"`
 }
 
 type SBOutboundTransport struct {
@@ -268,9 +272,10 @@ type SBOutboundTransport struct {
 }
 
 type SBRoute struct {
-	Rules      []SBRouteRule `json:"rules,omitempty"`
-	Final      string        `json:"final,omitempty"`
-	AutoDetect bool          `json:"auto_detect_interface,omitempty"`
+	Rules       []SBRouteRule `json:"rules,omitempty"`
+	Final       string        `json:"final,omitempty"`
+	AutoDetect  bool          `json:"auto_detect_interface,omitempty"`
+	FindProcess bool          `json:"find_process,omitempty"`
 }
 
 type SBRouteRule struct {
@@ -324,7 +329,7 @@ func appWhitelistPathRegexes(names []string) []string {
 	return out
 }
 
-func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
+func BuildProxyModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	port := cfg.LocalPort
 	if port == 0 {
 		port = getFreeLocalPort(14081)
@@ -333,10 +338,14 @@ func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
 	host, _ := splitHostPort(cfg.ListenAddr, "127.0.0.1", port)
 
 	dd := effectiveDataDir(cfg)
-	config := SingBoxConfig{
+	endpoints, err := buildEndpoints(cfg.Proxy)
+	if err != nil {
+		return SingBoxConfig{}, err
+	}
+	sbCfg := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: true},
 		DNS:       buildDNS(cfg),
-		Endpoints: buildEndpoints(cfg.Proxy),
+		Endpoints: endpoints,
 		Inbounds: []SBInbound{{
 			Type:       "mixed",
 			Tag:        "mixed-in",
@@ -348,32 +357,24 @@ func BuildProxyModeConfig(cfg EngineConfig) SingBoxConfig {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config
+	return sbCfg, nil
 }
 
-func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
+func BuildTunnelModeConfig(cfg EngineConfig) (SingBoxConfig, error) {
 	tunIPv4 := "172.19.0.1/30"
 	if cfg.TunIPv4 != "" {
 		tunIPv4 = cfg.TunIPv4
 	}
 	tunAddresses := []string{tunIPv4}
-	tunStack := "gvisor"
-	strictRoute := true
+	// system stack uses the kernel-level WinTun driver. EAC, BattlEye and other
+	// anti-cheats inspect network adapters at boot — gvisor's userspace stack
+	// looks foreign to them and refuses to instantiate (DBD "EAC client cannot
+	// be instantiated"). system stack is transparent to anti-cheat. WG/AWG
+	// always required system stack; others now follow suit.
+	tunStack := "system"
+	strictRoute := false
 
 	pt := strings.ToUpper(strings.TrimSpace(cfg.Proxy.Type))
-
-	if pt == "WIREGUARD" || pt == "AMNEZIAWG" {
-		tunStack = "system"
-		strictRoute = false
-	}
-
-	if pt == "HYSTERIA2" || pt == "TROJAN" || pt == "SS" || pt == "SHADOWSOCKS" {
-		strictRoute = false
-	}
-
-	if pt == "WIREGUARD" || pt == "AMNEZIAWG" {
-		tunAddresses = []string{tunIPv4}
-	}
 
 	var routeExclude []string
 	if pt != "WIREGUARD" && pt != "AMNEZIAWG" {
@@ -389,10 +390,14 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 	dd := effectiveDataDir(cfg)
 	outbounds := buildOutbounds(cfg.Proxy)
 
-	config := SingBoxConfig{
+	endpoints, err := buildEndpoints(cfg.Proxy)
+	if err != nil {
+		return SingBoxConfig{}, err
+	}
+	sbCfg := SingBoxConfig{
 		Log:       &SBLog{Level: "error", Disabled: false},
 		DNS:       buildDNS(cfg),
-		Endpoints: buildEndpoints(cfg.Proxy),
+		Endpoints: endpoints,
 		Inbounds: []SBInbound{{
 			Type:                "tun",
 			Tag:                 "tun-in",
@@ -407,7 +412,7 @@ func BuildTunnelModeConfig(cfg EngineConfig) SingBoxConfig {
 		Experimental: buildExperimentalCache(dd),
 	}
 
-	return config
+	return sbCfg, nil
 }
 
 func buildOutbounds(proxy ProxyConfig) []SBOutbound {
@@ -492,10 +497,17 @@ func buildDNS(cfg EngineConfig) *SBDNS {
 		return dns
 	}
 
-	// proxy mode: прямой UDP DNS без detour.
-	// Роутинг DNS через proxy-outbound создаёт circular dependency:
-	// DNS нужен для резолва трафика → DNS идёт через proxy → proxy нужно соединение → ...
-	// В proxy-режиме DNS-leaks несущественны (приложения используют системный прокси).
+	// proxy mode: prior versions used direct UDP DNS to 8.8.8.8/1.1.1.1
+	// with the comment "DNS leaks are insignificant in proxy mode (apps use
+	// system proxy)". That was wrong: plain UDP/53 to public resolvers is
+	// readable by the ISP and tags every TLS handshake with the queried
+	// domain. The sing-box engine resolves names for the proxy outbound too,
+	// so those queries leak even when the rest of the app traffic is
+	// tunneled. The fix: encrypt DNS by default via DoT.
+	//
+	// User-supplied custom DNS keep their explicit type (UDP if the user
+	// asked for it — we don't second-guess). When no custom DNS is set,
+	// emit TLS DNS entries (port 853) only.
 	servers := []SBDNSServer{}
 	if len(cfg.DNSServers) > 0 {
 		for i, raw := range cfg.DNSServers {
@@ -513,8 +525,8 @@ func buildDNS(cfg EngineConfig) *SBDNS {
 		servers = append(servers, SBDNSServer{Type: "local", Tag: "local"})
 	} else {
 		servers = []SBDNSServer{
-			{Type: "udp", Tag: "google", Server: "8.8.8.8"},
-			{Type: "udp", Tag: "cloudflare", Server: "1.1.1.1"},
+			{Type: "tls", Tag: "cloudflare-tls", Server: "1.1.1.1"},
+			{Type: "tls", Tag: "google-tls", Server: "8.8.8.8"},
 			{Type: "local", Tag: "local"},
 		}
 	}
@@ -551,6 +563,12 @@ func buildRoute(cfg EngineConfig) *SBRoute {
 	route := &SBRoute{
 		Final:      "proxy",
 		AutoDetect: true,
+		// Enable process matching whenever the user has supplied an app
+		// whitelist. sing-box auto-detects this from process_* rules but
+		// being explicit avoids subtle gotchas where rule reordering or
+		// rule pruning leaves no process_* rule in proxy-mode and matching
+		// silently turns off mid-session.
+		FindProcess: len(cfg.AppWhitelist) > 0,
 	}
 
 	var rules []SBRouteRule

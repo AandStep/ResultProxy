@@ -263,9 +263,10 @@ export const useAppConfig = (addLog) => {
         } else if (key === "killswitch") {
             const nextSettings = { ...settings, [key]: value };
             setSettings(nextSettings);
-            wailsAPI.toggleKillSwitch(value).then(() => {
-                return persistSettings(nextSettings);
-            }).catch(async err => {
+            try {
+                await wailsAPI.toggleKillSwitch(value);
+                await persistSettings(nextSettings);
+            } catch (err) {
                 console.error("Kill switch error:", err);
                 const rollbackSettings = { ...settings, [key]: previousValue };
                 setSettings(rollbackSettings);
@@ -275,7 +276,8 @@ export const useAppConfig = (addLog) => {
                     message: `Не удалось изменить состояние Kill Switch.\n\n${err}`,
                     variant: "danger",
                 });
-            });
+                throw err;
+            }
         } else if (key === "adblock") {
             const nextSettings = { ...settings, [key]: value };
             setSettings(nextSettings);

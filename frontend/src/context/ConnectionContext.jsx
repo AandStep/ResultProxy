@@ -79,6 +79,8 @@ export const ConnectionProvider = ({ children }) => {
         settings,
         activeProxy,
         statusGenerationRef,
+        showAlertDialog,
+        updateSetting,
     );
 
     const { disconnectOnly, toggleConnection, selectAndConnect, deleteProxy, cancelConnect } = useDaemonControl(

@@ -35,34 +35,34 @@ type BlockedListProvider interface {
 	FetchBlockedDomains(ctx context.Context, country string) ([]string, error)
 }
 
+// HTTPBlockedListProvider fetches blocked-domain lists from CDN-hosted
+// sources and resolves the user's country via the project-controlled
+// CountryClient. The previous implementation cycled through three
+// third-party IP-geolocation services (ip-api.com over plaintext HTTP,
+// ipapi.co, geojs.io), leaking the user's real IP each time. That fallback
+// chain is gone — country resolution now goes only through the project API.
 type HTTPBlockedListProvider struct {
 	Client          *http.Client
-	CountryURL      string
+	Country         *CountryClient
 	ListURLTemplate string
 }
 
-func NewHTTPBlockedListProvider() *HTTPBlockedListProvider {
+// NewHTTPBlockedListProvider constructs a provider tied to the given user
+// data directory (where the country cache lives). Pass an empty string for
+// tests that don't need persistence.
+func NewHTTPBlockedListProvider(userDataPath string) *HTTPBlockedListProvider {
 	return &HTTPBlockedListProvider{
 		Client:          &http.Client{Timeout: 10 * time.Second},
-		CountryURL:      "https://get.geojs.io/v1/ip/country.json",
+		Country:         NewCountryClient(userDataPath),
 		ListURLTemplate: strings.TrimSpace(os.Getenv("RESULTPROXY_BLOCKED_LIST_URL_TEMPLATE")),
 	}
 }
 
 func (p *HTTPBlockedListProvider) ResolveCountry(ctx context.Context) (string, error) {
-	endpoints := p.countryEndpoints()
-	var lastErr error
-	for _, endpoint := range endpoints {
-		country, err := p.resolveCountryFromEndpoint(ctx, endpoint)
-		if err == nil && len(country) == 2 {
-			return country, nil
-		}
-		lastErr = err
+	if p.Country == nil {
+		return "", fmt.Errorf("country client not initialised")
 	}
-	if lastErr != nil {
-		return "", lastErr
-	}
-	return "", fmt.Errorf("country resolution failed")
+	return p.Country.LookupSelfCountry(ctx)
 }
 
 func (p *HTTPBlockedListProvider) FetchBlockedDomains(ctx context.Context, country string) ([]string, error) {
@@ -326,62 +326,6 @@ func defaultPublicSourceTemplates(country string) []string {
 	return sources
 }
 
-func (p *HTTPBlockedListProvider) countryEndpoints() []string {
-	overrideMany := strings.TrimSpace(os.Getenv("RESULTPROXY_COUNTRY_SOURCES"))
-	if overrideMany != "" {
-		parts := strings.Split(overrideMany, ",")
-		out := make([]string, 0, len(parts))
-		for _, part := range parts {
-			part = strings.TrimSpace(part)
-			if part != "" {
-				out = append(out, part)
-			}
-		}
-		if len(out) > 0 {
-			return out
-		}
-	}
-	if strings.TrimSpace(p.CountryURL) != "" {
-		return []string{
-			p.CountryURL,
-			"https://ipapi.co/json/",
-			"http://ip-api.com/json/?fields=countryCode",
-		}
-	}
-	return []string{
-		"https://get.geojs.io/v1/ip/country.json",
-		"https://ipapi.co/json/",
-		"http://ip-api.com/json/?fields=countryCode",
-	}
-}
-
-func (p *HTTPBlockedListProvider) resolveCountryFromEndpoint(ctx context.Context, endpoint string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := p.client().Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("country service http %d: %s", resp.StatusCode, endpoint)
-	}
-	var body map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	keys := []string{"country", "country_code", "countryCode", "countryCodeIso2"}
-	for _, key := range keys {
-		if v, ok := body[key]; ok {
-			if s, ok := v.(string); ok {
-				cc := strings.ToLower(strings.TrimSpace(s))
-				if len(cc) == 2 {
-					return cc, nil
-				}
-			}
-		}
-	}
-	return "", fmt.Errorf("country code not found: %s", endpoint)
-}
+// (Previously this file also defined countryEndpoints and
+// resolveCountryFromEndpoint, which cycled through ip-api.com / ipapi.co /
+// geojs.io. They are removed — see CountryClient in country.go.)
