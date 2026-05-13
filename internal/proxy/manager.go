@@ -115,6 +115,11 @@ type Manager struct {
 	// on probe recovery.
 	proxyDead    bool
 	healthCancel context.CancelFunc
+
+	// Optional OS firewall hooks: engaged only when the watchdog first marks the
+	// upstream dead while kill switch is armed — not on routine Connect.
+	KillSwitchFirewallEngage    func(ProxyConfig, []string)
+	KillSwitchFirewallDisengage func()
 }
 
 var pingTCPProbe = PingProxy
@@ -1458,25 +1463,43 @@ func (m *Manager) runHealthWatchdog(ctx context.Context, proxy ProxyConfig, mode
 		wasDead := m.proxyDead
 		if alive {
 			consecutiveFails = 0
+			var disengageFn func()
 			if wasDead {
 				m.proxyDead = false
 				m.log.Success("[KILL SWITCH] VPN-сервер снова доступен")
 				m.emitStatus()
+				disengageFn = m.KillSwitchFirewallDisengage
 			}
 			m.mu.Unlock()
+			if disengageFn != nil {
+				disengageFn()
+			}
 			continue
 		}
 		consecutiveFails++
+		var shouldEngage bool
+		var engageFn func(ProxyConfig, []string)
+		var engageProxy ProxyConfig
+		var engageDNS []string
 		if consecutiveFails >= failuresBeforeDead && !wasDead {
 			m.proxyDead = true
 			if ks {
 				m.log.Warning(fmt.Sprintf("[KILL SWITCH] VPN-сервер %s:%d недоступен — kill switch блокирует весь трафик", proxy.IP, proxy.Port))
+				if m.KillSwitchFirewallEngage != nil {
+					shouldEngage = true
+					engageFn = m.KillSwitchFirewallEngage
+					engageProxy = proxy
+					engageDNS = append([]string(nil), m.dnsServers...)
+				}
 			} else {
 				m.log.Warning(fmt.Sprintf("[PROXY] VPN-сервер %s:%d недоступен", proxy.IP, proxy.Port))
 			}
 			m.emitStatus()
 		}
 		m.mu.Unlock()
+		if shouldEngage && engageFn != nil {
+			engageFn(engageProxy, engageDNS)
+		}
 	}
 }
 
@@ -1504,13 +1527,7 @@ func (m *Manager) ToggleKillSwitch(enable bool) error {
 
 	m.killSwitch = enable
 
-	if enable && !m.connected && m.sysProxy != nil {
-		
-		if err := m.sysProxy.ApplyKillSwitch(); err != nil {
-			return fmt.Errorf("applying kill switch: %w", err)
-		}
-		m.log.Warning("[KILL SWITCH] Активирована полная блокировка интернета!")
-	} else if !enable && m.sysProxy != nil {
+	if !enable && m.sysProxy != nil {
 		
 		if !m.connected {
 			if err := m.sysProxy.Disable(); err != nil {

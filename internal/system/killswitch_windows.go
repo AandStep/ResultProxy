@@ -124,7 +124,11 @@ func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string, dnsIPs []string) e
 
 	_ = ks.disableFirewall()
 
-	
+	proxyIPs := resolveProxyIPs(proxyAddr)
+	if len(proxyIPs) == 0 {
+		return fmt.Errorf("kill switch: no proxy IP to allow (address %q)", proxyAddr)
+	}
+
 	blockCmd := command("netsh", "advfirewall", "firewall", "add", "rule",
 		"name="+firewallRuleName+"_BlockAll",
 		"dir=out",
@@ -143,7 +147,6 @@ func (ks *WindowsKillSwitch) enableFirewall(proxyAddr string, dnsIPs []string) e
 	// every IP in the allow list. Without this, the connection request
 	// would itself be blocked because Windows enforces the rules before
 	// the proxy connect attempt.
-	proxyIPs := resolveProxyIPs(proxyAddr)
 	for i, ip := range proxyIPs {
 		ruleName := firewallRuleName + "_AllowProxy"
 		if i > 0 {

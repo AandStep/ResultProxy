@@ -253,9 +253,31 @@ func (a *App) startup(ctx context.Context) {
 	// was active, Windows kept the rules but our in-memory state is fresh.
 	// Without this the user starts with the internet already blocked and no
 	// way to recover from the UI (Disable() is now state-agnostic, see
-	// killswitch_windows.go). Rules are re-applied on the next Connect.
+	// killswitch_windows.go). Rules are re-applied when the health watchdog
+	// detects a dead upstream while kill switch is armed (see proxy.Manager).
 	if err := a.killSwitch.Disable(); err != nil {
 		a.log.Warning(fmt.Sprintf("[KILL SWITCH] Не удалось снять остаточные правила фаервола: %v", err))
+	}
+
+	a.proxy.KillSwitchFirewallEngage = func(p proxy.ProxyConfig, dns []string) {
+		addr := fmt.Sprintf("%s:%d", p.IP, p.Port)
+		if err := a.enableKillSwitchFirewall(addr, dns); err != nil {
+			a.log.Warning(fmt.Sprintf("[KILL SWITCH] Не удалось включить фаервол при недоступности узла: %v", err))
+		}
+	}
+	a.proxy.KillSwitchFirewallDisengage = func() {
+		if a.killSwitch != nil && a.killSwitch.IsEnabled() {
+			if err := a.killSwitch.Disable(); err != nil {
+				a.log.Warning(fmt.Sprintf("[KILL SWITCH] Не удалось снять фаервол после восстановления узла: %v", err))
+			} else {
+				a.log.Info("[KILL SWITCH] Правила фаервола сняты (узел снова доступен)")
+			}
+		}
+		st := a.proxy.GetStatus()
+		if st.IsConnected && st.CurrentProxy != nil && a.tray != nil {
+			cp := st.CurrentProxy
+			a.tray.SetConnectedProxy(a.resolveProxyID(*cp), fmt.Sprintf("%s:%d", cp.IP, cp.Port))
+		}
 	}
 
 	a.netmon = system.NewNetMonitor(func(status system.NetworkStatus) {
@@ -537,6 +559,11 @@ func (a *App) Disconnect() error {
 	}
 	err := a.proxy.Disconnect()
 	if err == nil {
+		if a.killSwitch != nil && a.killSwitch.IsEnabled() {
+			if derr := a.killSwitch.Disable(); derr != nil {
+				a.log.Error(fmt.Sprintf("[KILL SWITCH] Ошибка снятия правил фаервола при отключении: %v", derr))
+			}
+		}
 		if a.tray != nil {
 			a.tray.SetDisconnected()
 		}
@@ -681,40 +708,31 @@ func (a *App) GetLogs(page, size int) logger.LogPage {
 	return a.log.GetLogs(page, size)
 }
 
+// enableKillSwitchFirewall installs OS firewall rules for kill switch when a proxy
+// address is known. Caller supplies host:port (IP or resolvable name per platform).
+func (a *App) enableKillSwitchFirewall(proxyAddr string, dnsServers []string) error {
+	if a.killSwitch == nil || strings.TrimSpace(proxyAddr) == "" {
+		return nil
+	}
+	if err := a.killSwitch.Enable(proxyAddr, dnsServers); err != nil {
+		return err
+	}
+	if a.tray != nil {
+		a.tray.SetKillSwitchActive()
+	}
+	a.log.Warning("[KILL SWITCH] Активирована полная блокировка интернета (firewall)")
+	return nil
+}
+
 func (a *App) ToggleKillSwitch(enable bool) error {
 	if a.proxy == nil {
 		return fmt.Errorf("proxy manager not initialized")
 	}
 
 	if enable && a.killSwitch != nil {
-		status := a.proxy.GetStatus()
-		proxyAddr := ""
-		var dnsServers []string
-		if status.CurrentProxy != nil {
-			proxyAddr = fmt.Sprintf("%s:%d", status.CurrentProxy.IP, status.CurrentProxy.Port)
-			// DNS-leak fix: kill switch used to allow udp/53 to any
-			// destination. We now pass the same DNS list the engine uses so
-			// the firewall only lets queries reach the configured resolvers.
-			// extractDNSIPs inside KillSwitch falls back to 1.1.1.1+8.8.8.8
-			// when this is empty.
-			if a.config != nil {
-				cfg := a.config.GetConfig()
-				dnsServers = append([]string(nil), cfg.Settings.DNSServers...)
-			}
-			if fromProxy := dnsServersFromProxyExtra(*status.CurrentProxy); len(fromProxy) > 0 {
-				dnsServers = fromProxy
-			}
-		}
-		if err := a.killSwitch.Enable(proxyAddr, dnsServers); err != nil {
-			a.log.Warning(fmt.Sprintf("[KILL SWITCH] Firewall недоступен, используем fallback: %v", err))
-
-			return a.proxy.ToggleKillSwitch(enable)
-		}
-		if a.tray != nil {
-			a.tray.SetKillSwitchActive()
-		}
-		a.log.Warning("[KILL SWITCH] Активирована полная блокировка интернета (firewall)")
-		return nil
+		// OS firewall engages only when the health watchdog detects an unreachable
+		// upstream during an active session — not when toggling this setting.
+		a.log.Info("[KILL SWITCH] Включено; блокировка фаервола только если узел станет недоступен во время сессии.")
 	}
 
 	if !enable && a.killSwitch != nil && a.killSwitch.IsEnabled() {
