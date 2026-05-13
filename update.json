@@ -1,39 +1,15 @@
 {
   "version": "3.2.0",
   "releaseTitle": {
-    "ru": "Бета для NaiveProxy, улучшение безопасности, обновление внутри приложения",
-    "en": "Beta for NaiveProxy, security improvements, in-app update"
+    "ru": "Бета для NaiveProxy, улучшение безопасности, обновление внутри приложения, фикс KillSwitch",
+    "en": "Beta for NaiveProxy, security improvements, in-app update, KillSwitch fix"
   },
   "releaseNotes": {
-    "ru": "Добавлена поддержка NaiveProxy, но пока слабо протестирована, если у вас возникнут проблемы присылайте пожалуйста логи в issue. Исправлен туннель режим для macOS. Обновлены белые списки, теперь слушают дочерние процессы. Улучшена общая безопасноть приложения. Теперь после этой версии обновления будут происходить внутри приложения без необходимости заходить на гитхаб самому.",
-    "en": "Added support for NaiveProxy, but it is still poorly tested, If you encounter any problems, please send the logs to the issue. The tunnel mode for macOS has been fixed. The white lists have been updated, now they listen to child processes. The overall security of the application has been improved. Now after this version updates will take place inside the application without the need to go to GitHub yourself."
+    "ru": "Добавлена поддержка NaiveProxy, но пока слабо протестирована, если у вас возникнут проблемы присылайте пожалуйста логи в issue. Исправлен туннель режим для macOS. Обновлены белые списки, теперь слушают дочерние процессы. Улучшена общая безопасноть приложения. Теперь после этой версии обновления будут происходить внутри приложения без необходимости заходить на гитхаб самому. Исправлен KillSwitch.",
+    "en": "Added support for NaiveProxy, but it is still poorly tested, If you encounter any problems, please send the logs to the issue. The tunnel mode for macOS has been fixed. The white lists have been updated, now they listen to child processes. The overall security of the application has been improved. Now after this version updates will take place inside the application without the need to go to GitHub yourself. KillSwitch fix."
   },
   "downloadUrl": "https://result-proxy.ru/",
   "platforms": {
-    "windows-amd64-portable": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV.exe",
-      "sha256": "e52a3710248ae8b97dc8d09ff8e62d123069c597008062d1b14b4d7973da3e46",
-      "size": 46003712
-    },
-    "windows-amd64-installer": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV-amd64-installer.exe",
-      "sha256": "2b4a0b453d2715e0679c217b215f50df20b132f1aab509c34383f37cd20e063e",
-      "size": 24190927
-    },
-    "darwin-universal": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV.dmg",
-      "sha256": "4247ed07365b14da32c4e86b1164ec0d7fcd3ecfb95795eaa53b0dbdbbe23575",
-      "size": 39593474
-    },
-    "linux-amd64-appimage": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/ResultV-3.2.0-dev.1-x86_64.AppImage",
-      "sha256": "99919620a6c6bcb4fa66b0d6ee898565976fdf1a1cc8438f44709c0a30abe9ad",
-      "size": 87566840
-    },
-    "linux-amd64-deb": {
-      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0-dev.1/resultv_3.2.0~dev.1_amd64.deb",
-      "sha256": "f3e92e83e39caf1ab5e7ee7d2f8928cad01fdcdc582d282ba522e9432be17ee9",
-      "size": 18974864
-    }
+    
   }
 }
