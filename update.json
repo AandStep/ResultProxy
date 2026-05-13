@@ -1,5 +1,5 @@
 {
-  "version": "3.2.0",
+  "version": "3.1.0",
   "releaseTitle": {
     "ru": "Бета для NaiveProxy, улучшение безопасности, обновление внутри приложения, фикс KillSwitch",
     "en": "Beta for NaiveProxy, security improvements, in-app update, KillSwitch fix"
@@ -10,6 +10,30 @@
   },
   "downloadUrl": "https://result-proxy.ru/",
   "platforms": {
-    
+    "windows-amd64-portable": {
+      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0/ResultV.exe",
+      "sha256": "1028f425c98b01a54c7b200475a1ed20bae1b7605307762288bb9512e964b5db",
+      "size": 46012928
+    },
+    "windows-amd64-installer": {
+      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0/ResultV-amd64-installer.exe",
+      "sha256": "149f38e014cfcc857b6af873c86835a36538390c7e9c365f7e9030a20b344c09",
+      "size": 24197534
+    },
+    "darwin-universal": {
+      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0/ResultV.dmg",
+      "sha256": "3a828d8d509e8508b559bf2f10c757f8594698cf1d1fccc69eca408d558ba6ff",
+      "size": 54978363
+    },
+    "linux-amd64-appimage": {
+      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0/ResultV-3.2.0-x86_64.AppImage",
+      "sha256": "d3ca1615e2bfd3cf524d0cd0da2800d0c15e21b66204f6f83e0e440c5e9910c0",
+      "size": 91372024
+    },
+    "linux-amd64-deb": {
+      "url": "https://github.com/AandStep/ResultV/releases/download/v3.2.0/resultv_3.2.0_amd64.deb",
+      "sha256": "bbcf01b05111c4f18c6faa460eb0d6872ef1034e3de187c0f508be654dd8a143",
+      "size": 23144462
+    }
   }
 }
