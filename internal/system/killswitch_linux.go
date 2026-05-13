@@ -59,6 +59,9 @@ func (k *LinuxKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 		return nil
 	}
 	proxyIPs := resolveProxyIPs(proxyAddr)
+	if len(proxyIPs) == 0 {
+		return fmt.Errorf("kill switch: no proxy IP to allow (address %q)", proxyAddr)
+	}
 	dnsIPs := extractDNSIPs(dnsServers)
 
 	var err error

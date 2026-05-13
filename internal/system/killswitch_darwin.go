@@ -58,7 +58,11 @@ func (k *DarwinKillSwitch) Enable(proxyAddr string, dnsServers []string) error {
 		return nil
 	}
 
-	rules := buildPFRules(resolveProxyIPs(proxyAddr), extractDNSIPs(dnsServers))
+	proxyIPs := resolveProxyIPs(proxyAddr)
+	if len(proxyIPs) == 0 {
+		return fmt.Errorf("kill switch: no proxy IP to allow (address %q)", proxyAddr)
+	}
+	rules := buildPFRules(proxyIPs, extractDNSIPs(dnsServers))
 	if err := os.WriteFile(pfRulesPath, []byte(rules), 0o600); err != nil {
 		return fmt.Errorf("write pf rules: %w", err)
 	}
