@@ -16,6 +16,7 @@
  */
 
 import { useState, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import wailsAPI from "../utils/wailsAPI";
 
 export const useDaemonStatus = (
@@ -30,7 +31,10 @@ export const useDaemonStatus = (
     settings,
     activeProxy,
     statusGenerationRef,
+    showAlertDialog,
+    updateSetting,
 ) => {
+    const { t } = useTranslation();
     const [isProxyDead, setIsProxyDead] = useState(false);
     const [stats, setStats] = useState({ download: 0, upload: 0 });
     const [speedHistory, setSpeedHistory] = useState({
@@ -39,6 +43,10 @@ export const useDaemonStatus = (
     });
     const [daemonStatus, setDaemonStatus] = useState("checking");
     const prevProxyDead = useRef(false);
+    const prevConnectedRef = useRef(false);
+    const emergencyPopupShownRef = useRef(false);
+    const emergencyActionInFlightRef = useRef(false);
+    const statusErrorStreakRef = useRef(0);
 
     useEffect(() => {
         let interval;
@@ -51,14 +59,87 @@ export const useDaemonStatus = (
                 // the new intent and would flap isConnected back to its old value.
                 const genChanged = statusGenerationRef && statusGenerationRef.current !== genAtStart;
                 if (genChanged) return;
+                if (!data || typeof data !== "object") {
+                    throw new Error("invalid daemon status payload");
+                }
+                statusErrorStreakRef.current = 0;
                 if (daemonStatus !== "online") setDaemonStatus("online");
 
-                setIsProxyDead(!!data.isProxyDead);
-                if (data.isConnected) {
+                const connected = !!data.isConnected;
+                const killSwitchActive = !!data.killSwitchActive;
+                const proxyDead = !!data.isProxyDead;
+
+                setIsProxyDead(proxyDead);
+                if (connected && !proxyDead) {
                     setFailedProxy(null);
                 }
 
-                if (data.isConnected) {
+                const configuredKillSwitch = !!settings?.killswitch;
+                const killSwitchEngaged = killSwitchActive || configuredKillSwitch;
+                // Two firing conditions for the emergency modal:
+                //  (a) we *were* connected last tick and now we're not, while
+                //      kill switch is on — classic "server dropped, firewall is
+                //      now holding all traffic".
+                //  (b) backend still says connected but the health watchdog
+                //      flagged the proxy dead — sing-box's local listener is
+                //      alive but upstream is gone, firewall is blocking and the
+                //      user has no idea why nothing loads.
+                const droppedWithKillSwitch =
+                    prevConnectedRef.current && !connected && killSwitchEngaged;
+                const aliveButProxyDead =
+                    connected && proxyDead && killSwitchEngaged;
+                const killSwitchTriggered =
+                    (droppedWithKillSwitch || aliveButProxyDead) && !isSwitchingRef.current;
+
+                if (
+                    killSwitchTriggered &&
+                    !emergencyPopupShownRef.current &&
+                    !emergencyActionInFlightRef.current &&
+                    typeof showAlertDialog === "function"
+                ) {
+                    emergencyPopupShownRef.current = true;
+                    showAlertDialog({
+                        title: t("killswitchPopup.title"),
+                        message: t("killswitchPopup.message"),
+                        variant: "danger",
+                        confirmText: t("killswitchPopup.confirm"),
+                        onConfirmAction: async () => {
+                            if (emergencyActionInFlightRef.current) return;
+                            emergencyActionInFlightRef.current = true;
+                            addLog("[KILL SWITCH] Подтверждено: отключаем сервер и снимаем блокировку фаервола.", "warning");
+                            try {
+                                await wailsAPI.disconnect();
+                            } catch (e) {
+                                // best effort
+                            }
+                            try {
+                                // Always clear firewall rules via toggleKillSwitch(false).
+                                // We deliberately do NOT touch settings.killswitch — the
+                                // feature stays enabled so the next Connect re-arms the
+                                // rules; the user only wanted out of the *current* block.
+                                await wailsAPI.toggleKillSwitch(false);
+                                setIsConnected(false);
+                                setIsProxyDead(false);
+                                setFailedProxy(null);
+                                addLog("[KILL SWITCH] Сервер отключён, правила фаервола сняты. Настройка Kill Switch активна.", "success");
+                            } catch (e) {
+                                addLog(`[KILL SWITCH] Ошибка снятия блокировки: ${e?.message || e}`, "error");
+                            } finally {
+                                emergencyActionInFlightRef.current = false;
+                            }
+                        },
+                    });
+                }
+                // Reset the one-shot flag when the situation clears: either we
+                // reconnected and the probe is healthy again, or kill switch is
+                // off entirely. Without this, the modal would never show twice
+                // in one session.
+                if ((connected && !proxyDead) || !killSwitchEngaged) {
+                    emergencyPopupShownRef.current = false;
+                }
+                prevConnectedRef.current = connected;
+
+                if (connected) {
                     if (data.isProxyDead && !prevProxyDead.current) {
                         addLog(
                             `Внимание: Узел ${
@@ -73,7 +154,7 @@ export const useDaemonStatus = (
                 prevProxyDead.current = !!data.isProxyDead;
 
                 if (!isSwitchingRef.current) {
-                    setIsConnected(data.isConnected);
+                    setIsConnected(connected);
                     if (data.currentProxy) {
                         const currentID = String(data.currentProxy.id || "").trim();
                         const currentIP = String(data.currentProxy.ip || "").trim().toLowerCase();
@@ -130,8 +211,11 @@ export const useDaemonStatus = (
                 }));
                 
             } catch (error) {
-                setDaemonStatus("offline");
-                if (isConnected) setIsConnected(false);
+                statusErrorStreakRef.current += 1;
+                if (statusErrorStreakRef.current >= 3) {
+                    setDaemonStatus("offline");
+                    if (isConnected) setIsConnected(false);
+                }
             }
         };
 
@@ -150,6 +234,10 @@ export const useDaemonStatus = (
         isSwitchingRef,
         activeProxy,
         statusGenerationRef,
+        showAlertDialog,
+        settings,
+        updateSetting,
+        t,
     ]);
 
     return { isProxyDead, stats, speedHistory, daemonStatus };

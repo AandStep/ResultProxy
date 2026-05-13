@@ -36,8 +36,10 @@ build/bin/*.exe
 build/bin/cache.db
 /cache.db
 build/windows/installer/tmp/*
-# Fetched from Go module github.com/sagernet/cronet-go/lib/windows_amd64 (see scripts/ensure-libcronet-windows.ps1)
+# Fetched from Go modules via scripts/ensure-libcronet-*.{ps1,sh}
 build/windows/libcronet.dll
+build/darwin/libcronet.dylib
+build/linux/libcronet.so
 *.timestamp-*.mjs
 /tmp.exe
 *~

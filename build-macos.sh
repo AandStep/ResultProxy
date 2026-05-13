@@ -45,8 +45,19 @@ if [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 
+echo "==> stage libcronet.dylib (sing-box naive / Cronet)"
+LIBCRONET_SRC="build/darwin/libcronet.dylib"
+if [ ! -f "$LIBCRONET_SRC" ]; then
+  echo "ERROR: $LIBCRONET_SRC not found — run scripts/ensure-libcronet-macos.sh" >&2
+  exit 1
+fi
+cp -f "$LIBCRONET_SRC" "${APP_PATH}/Contents/MacOS/"
+
 if [ -n "${APPLE_DEVELOPER_ID:-}" ]; then
-  echo "==> codesign"
+  echo "==> codesign libcronet.dylib"
+  codesign --force --options runtime --timestamp \
+    --sign "$APPLE_DEVELOPER_ID" "${APP_PATH}/Contents/MacOS/libcronet.dylib"
+  echo "==> codesign app"
   codesign --force --deep --options runtime --timestamp \
     --sign "$APPLE_DEVELOPER_ID" "$APP_PATH"
 else

@@ -352,6 +352,11 @@
     "confirmAction": "Confirm action",
     "delete": "Delete"
   },
+  "killswitchPopup": {
+    "title": "Kill Switch Triggered",
+    "message": "The VPN server is unreachable — Kill Switch is blocking all traffic.\n\nDisconnect the server and clear the firewall block? The Kill Switch setting stays on, so protection will engage again on the next connection.",
+    "confirm": "Disconnect and clear block"
+  },
   "app": {
     "loading": "Loading system..."
   },

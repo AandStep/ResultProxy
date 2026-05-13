@@ -1,12 +1,12 @@
 {
-  "version": "3.2.0-dev.1",
+  "version": "3.2.0",
   "releaseTitle": {
-    "ru": "Тестовый коммит не для скачки",
-    "en": "Тестовый коммит не для скачки"
+    "ru": "Бета для NaiveProxy, улучшение безопасности, обновление внутри приложения",
+    "en": "Beta for NaiveProxy, security improvements, in-app update"
   },
   "releaseNotes": {
-    "ru": "Тестовый коммит не для скачки",
-    "en": "Тестовый коммит не для скачки"
+    "ru": "Добавлена поддержка NaiveProxy, но пока слабо протестирована, если у вас возникнут проблемы присылайте пожалуйста логи в issue. Исправлен туннель режим для macOS. Обновлены белые списки, теперь слушают дочерние процессы. Улучшена общая безопасноть приложения. Теперь после этой версии обновления будут происходить внутри приложения без необходимости заходить на гитхаб самому.",
+    "en": "Added support for NaiveProxy, but it is still poorly tested, If you encounter any problems, please send the logs to the issue. The tunnel mode for macOS has been fixed. The white lists have been updated, now they listen to child processes. The overall security of the application has been improved. Now after this version updates will take place inside the application without the need to go to GitHub yourself."
   },
   "downloadUrl": "https://result-proxy.ru/",
   "platforms": {

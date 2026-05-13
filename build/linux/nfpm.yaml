@@ -20,6 +20,10 @@ contents:
     dst: /usr/bin/resultv
     file_info:
       mode: 0755
+  - src: ./build/linux/libcronet.so
+    dst: /usr/lib/libcronet.so
+    file_info:
+      mode: 0755
   - src: ./build/linux/resultv.desktop
     dst: /usr/share/applications/resultv.desktop
   - src: ./public/logo.png

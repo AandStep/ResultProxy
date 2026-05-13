@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-3.1.2-blue.svg" alt="Version">
+  <img src="https://img.shields.io/badge/version-3.2.0-blue.svg" alt="Version">
   <img src="https://img.shields.io/badge/desktop-Wails-27272f.svg" alt="Wails">
   <img src="https://img.shields.io/badge/backend-Go-00ADD8.svg" alt="Go">
   <img src="https://img.shields.io/badge/frontend-React_18-61dafb.svg" alt="React">
@@ -33,7 +33,7 @@
 
 ## Overview
 
-ResultV **3.1.2** is a native desktop application built with **[Wails v2](https://wails.io/)**. The UI is **React 18** with **Vite** and **Tailwind CSS**; traffic is handled by a **Go** backend and **[sing-box](https://github.com/SagerNet/sing-box)** (with project-specific build tags in `wails.json`). The interface is localized with **i18next** (English and Russian).
+ResultV **3.2.0** is a native desktop application built with **[Wails v2](https://wails.io/)**. The UI is **React 18** with **Vite** and **Tailwind CSS**; traffic is handled by a **Go** backend and **[sing-box](https://github.com/SagerNet/sing-box)** (with project-specific build tags in `wails.json`). The interface is localized with **i18next** (English and Russian).
 
 **Prebuilt releases:** GitHub Actions publishes **Windows amd64** artifacts (portable `.exe` and NSIS installer), **macOS** (`.dmg`) and **Linux** (`.AppImage`, `.deb`, `.rpm`) when a `v*` tag is pushed.
 
@@ -68,6 +68,8 @@ ResultV **3.1.2** is a native desktop application built with **[Wails v2](https:
 - Subscriptions in **JSON** (Xray format with `outbounds[]` and sing-box format with `type`) are parsed for all key protocols, including `wireguard`/`amneziawg` with an `amnezia` block.
 - **Tunnel** mode on Windows requires **running as Administrator**.
 - **Kill Switch** on Windows may require **administrator privileges** for firewall rules (`internal/system/killswitch_windows.go`).
+- If internet remains blocked after a crash or forced app termination, run in **PowerShell (Administrator)**:
+  `Get-NetFirewallRule -DisplayName 'ResultV_KillSwitch*' -ErrorAction SilentlyContinue | Remove-NetFirewallRule`
 - Some subscription providers enforce **HWID device limits**; the app sends a stable `x-hwid` when fetching subscriptions and shows the reason if the provider returned an empty response due to the limit.
 - **In case of issues**, please contact TG @resultpoint_manager.
 

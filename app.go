@@ -248,6 +248,15 @@ func (a *App) startup(ctx context.Context) {
 	}
 
 	a.killSwitch = system.NewKillSwitch()
+	// Best-effort cleanup of any kill-switch firewall rules left over from a
+	// previous run — if the app crashed or was force-killed while kill switch
+	// was active, Windows kept the rules but our in-memory state is fresh.
+	// Without this the user starts with the internet already blocked and no
+	// way to recover from the UI (Disable() is now state-agnostic, see
+	// killswitch_windows.go). Rules are re-applied on the next Connect.
+	if err := a.killSwitch.Disable(); err != nil {
+		a.log.Warning(fmt.Sprintf("[KILL SWITCH] Не удалось снять остаточные правила фаервола: %v", err))
+	}
 
 	a.netmon = system.NewNetMonitor(func(status system.NetworkStatus) {
 		wailsRuntime.EventsEmit(a.ctx, "network:status", status)
@@ -352,7 +361,12 @@ func (a *App) shutdown(ctx context.Context) {
 			a.tray.Stop()
 		}
 
-		if a.killSwitch != nil && a.killSwitch.IsEnabled() {
+		// Always run Disable() — never trust in-memory IsEnabled() at
+		// shutdown. If the user toggled kill switch from another path
+		// (tray, headless API) the in-memory flag may be stale, and
+		// leaving stray firewall rules on quit means the user reboots
+		// with no internet. Disable() is a no-op when nothing is set.
+		if a.killSwitch != nil {
 			_ = a.killSwitch.Disable()
 		}
 

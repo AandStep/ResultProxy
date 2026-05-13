@@ -22,6 +22,10 @@ export function Connect(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['Connect'](arg1, arg2, arg3, arg4);
 }
 
+export function DebugFrontendLog(arg1) {
+  return window['go']['main']['App']['DebugFrontendLog'](arg1);
+}
+
 export function DeleteSubscription(arg1) {
   return window['go']['main']['App']['DeleteSubscription'](arg1);
 }
@@ -72,6 +76,10 @@ export function GetPlatform() {
 
 export function GetStatus() {
   return window['go']['main']['App']['GetStatus']();
+}
+
+export function GetUpdateManifest() {
+  return window['go']['main']['App']['GetUpdateManifest']();
 }
 
 export function GetVersion() {

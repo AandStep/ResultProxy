@@ -146,7 +146,7 @@ export const wailsAPI = {
       return await GetStatus(); 
     } catch (e) {
       console.error("wailsAPI.getStatus error:", e);
-      return false;
+      throw e;
     }
   },
 

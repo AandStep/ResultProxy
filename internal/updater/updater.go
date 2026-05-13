@@ -32,7 +32,7 @@ type ProgressFn func(downloaded, total int64, speedBps float64)
 // Used to point dev/test builds at a separate update.json on the dev branch.
 var ManifestURLOverride string
 
-const productionManifestURL = "https://raw.githubusercontent.com/AandStep/ResultV/dev/update.json"
+const productionManifestURL = "https://raw.githubusercontent.com/AandStep/ResultV/main/update.json"
 
 // Updater manages the in-app update lifecycle: check → download → verify → install.
 type Updater struct {

@@ -160,6 +160,11 @@ jobs:
           go install github.com/wailsapp/wails/v2/cmd/wails@latest
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      - name: Stage libcronet.dylib (sing-box naive / Cronet)
+        run: |
+          chmod +x scripts/ensure-libcronet-macos.sh
+          ./scripts/ensure-libcronet-macos.sh
+
       - name: Build macOS app and .dmg
         env:
           SUBSCRIPTION_ENCRYPT_KEY: ${{ secrets.SUBSCRIPTION_ENCRYPT_KEY }}
@@ -236,6 +241,11 @@ jobs:
           curl -fsSL -o /usr/local/bin/linuxdeploy \
             https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x /usr/local/bin/linuxdeploy
+
+      - name: Stage libcronet.so (sing-box naive / Cronet)
+        run: |
+          chmod +x scripts/ensure-libcronet-linux.sh
+          ./scripts/ensure-libcronet-linux.sh
 
       - name: Build Linux artifacts
         env:

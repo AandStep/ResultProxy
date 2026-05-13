@@ -107,6 +107,14 @@ type Manager struct {
 	// excluded a parent app (Steam, Discord, etc.). Lifecycle is bound to
 	// the connection: started on Connect, stopped on Disconnect.
 	procTracker *processtree.Monitor
+
+	// proxyDead is set by the health watchdog after consecutive probe
+	// failures against the proxy server. It surfaces "VPN is dead but the
+	// sing-box process is still alive" to the UI so it can offer to drop
+	// the connection + clear firewall rules. Reset to false on Connect and
+	// on probe recovery.
+	proxyDead    bool
+	healthCancel context.CancelFunc
 }
 
 var pingTCPProbe = PingProxy
@@ -454,6 +462,7 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 				m.listenLAN = listenLAN
 				m.dnsServers = dnsServers
 				m.tunIPv4 = tunIPv4
+				m.startHealthWatchdogLocked(proxy, mode)
 				m.emitStatus()
 				m.mu.Unlock()
 				return ConnectResultDTO{
@@ -546,6 +555,7 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 	m.dnsServers = dnsServers
 	m.tunIPv4 = tunIPv4
 	m.startProcessTrackerLocked()
+	m.startHealthWatchdogLocked(proxy, mode)
 	m.emitStatus()
 	m.mu.Unlock()
 
@@ -692,6 +702,7 @@ func (m *Manager) connectLocked(ctx context.Context, proxy ProxyConfig, mode Pro
 	m.dnsServers = dnsServers
 	m.tunIPv4 = tunIPv4
 	m.startProcessTrackerLocked()
+	m.startHealthWatchdogLocked(proxy, mode)
 	m.emitStatus()
 
 	if proxy.SubscriptionURL != "" {
@@ -1127,6 +1138,7 @@ func (m *Manager) Disconnect() error {
 	defer m.mu.Unlock()
 
 	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
 
 	if m.sysProxy != nil {
 		if err := m.sysProxy.Disable(); err != nil {
@@ -1153,6 +1165,7 @@ func (m *Manager) disconnectLocked() error {
 	m.log.Info("[PROXY] Отключение...")
 
 	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
 
 	if err := m.engine.Stop(); err != nil {
 		m.log.Error(fmt.Sprintf("[PROXY] Ошибка остановки движка: %v", err))
@@ -1279,7 +1292,7 @@ func (m *Manager) GetStatus() StatusDTO {
 
 	return StatusDTO{
 		IsConnected:      m.connected,
-		IsProxyDead:      false,
+		IsProxyDead:      m.proxyDead,
 		CurrentProxy:     m.proxy,
 		Mode:             m.mode,
 		Uptime:           uptime,
@@ -1376,6 +1389,115 @@ func (m *Manager) Ping(ip string, port int, proxyType string) PingResultDTO {
 }
 
 
+// startHealthWatchdogLocked starts a goroutine that pings the proxy server
+// every 5 seconds. After two consecutive failures it flips m.proxyDead and
+// emits a status event so the frontend can show the emergency modal — sing-box
+// can keep its local listener alive long after the upstream is gone, so
+// m.connected by itself is a bad signal.
+//
+// Caller must hold m.mu. Any in-flight watchdog is cancelled first.
+func (m *Manager) startHealthWatchdogLocked(proxy ProxyConfig, mode ProxyMode) {
+	if m.healthCancel != nil {
+		m.healthCancel()
+		m.healthCancel = nil
+	}
+	m.proxyDead = false
+
+	parentCtx := m.ctx
+	if parentCtx == nil {
+		parentCtx = context.Background()
+	}
+	healthCtx, cancel := context.WithCancel(parentCtx)
+	m.healthCancel = cancel
+
+	go m.runHealthWatchdog(healthCtx, proxy, mode)
+}
+
+// stopHealthWatchdogLocked stops the watchdog goroutine and clears the dead
+// flag. Caller must hold m.mu.
+func (m *Manager) stopHealthWatchdogLocked() {
+	if m.healthCancel != nil {
+		m.healthCancel()
+		m.healthCancel = nil
+	}
+	m.proxyDead = false
+}
+
+func (m *Manager) runHealthWatchdog(ctx context.Context, proxy ProxyConfig, mode ProxyMode) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	const failuresBeforeDead = 2
+	consecutiveFails := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		// Snapshot under lock and bail early if disconnected.
+		m.mu.Lock()
+		if !m.connected {
+			m.mu.Unlock()
+			return
+		}
+		ks := m.killSwitch
+		m.mu.Unlock()
+
+		// Probe runs without the lock — TCP/UDP dial can block for seconds.
+		alive := m.probeProxyAlive(proxy, mode)
+
+		m.mu.Lock()
+		// Re-check after the probe: Disconnect may have run while we waited.
+		if !m.connected {
+			m.mu.Unlock()
+			return
+		}
+		wasDead := m.proxyDead
+		if alive {
+			consecutiveFails = 0
+			if wasDead {
+				m.proxyDead = false
+				m.log.Success("[KILL SWITCH] VPN-сервер снова доступен")
+				m.emitStatus()
+			}
+			m.mu.Unlock()
+			continue
+		}
+		consecutiveFails++
+		if consecutiveFails >= failuresBeforeDead && !wasDead {
+			m.proxyDead = true
+			if ks {
+				m.log.Warning(fmt.Sprintf("[KILL SWITCH] VPN-сервер %s:%d недоступен — kill switch блокирует весь трафик", proxy.IP, proxy.Port))
+			} else {
+				m.log.Warning(fmt.Sprintf("[PROXY] VPN-сервер %s:%d недоступен", proxy.IP, proxy.Port))
+			}
+			m.emitStatus()
+		}
+		m.mu.Unlock()
+	}
+}
+
+// probeProxyAlive picks the right probe for the proxy's transport. HYSTERIA2
+// and WireGuard speak UDP, the rest TCP — a plain TCP connect would falsely
+// pass/fail for UDP endpoints.
+func (m *Manager) probeProxyAlive(proxy ProxyConfig, _ ProxyMode) bool {
+	pt := strings.ToUpper(strings.TrimSpace(proxy.Type))
+	switch pt {
+	case "HYSTERIA2":
+		_, reachable, _, _ := pingHysteria2Probe(proxy.IP, proxy.Port)
+		return reachable
+	case "WIREGUARD", "AMNEZIAWG":
+		_, reachable, _ := pingWireGuardProbe(proxy.IP, proxy.Port)
+		return reachable
+	default:
+		_, reachable, _ := pingTCPProbe(proxy.IP, proxy.Port)
+		return reachable
+	}
+}
+
 func (m *Manager) ToggleKillSwitch(enable bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1407,6 +1529,7 @@ func (m *Manager) Shutdown() {
 	defer m.mu.Unlock()
 
 	m.stopProcessTrackerLocked()
+	m.stopHealthWatchdogLocked()
 
 	if m.connected {
 		m.engine.Stop()
@@ -1433,7 +1556,7 @@ func (m *Manager) emitStatus() {
 	}
 	status := StatusDTO{
 		IsConnected:      m.connected,
-		IsProxyDead:      false,
+		IsProxyDead:      m.proxyDead,
 		CurrentProxy:     m.proxy,
 		Mode:             m.mode,
 		Uptime:           uptime,
