@@ -39,6 +39,7 @@ import { FileUp, ClipboardList } from "lucide-react";
 import ProtocolSelectionModal from "../components/ui/ProtocolSelectionModal";
 import AppSelect from "../components/ui/AppSelect";
 import wailsAPI from "../utils/wailsAPI";
+import { isInsecureSubscriptionError } from "../utils/subscriptionSecurity";
 
 const PLAIN_TYPES = ["HTTP", "HTTPS", "SOCKS5"];
 const VPN_TYPES_LIST = ["VLESS", "VMESS", "TROJAN", "SS", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "NAIVEPROXY"];
@@ -191,6 +192,7 @@ export const AddProxyView = () => {
     setActiveTab,
     setSubscriptions,
     showAlertDialog,
+    showConfirmDialog,
   } = useConfigContext();
   const {
     activeProxy,
@@ -258,7 +260,28 @@ export const AddProxyView = () => {
     if (isSubscriptionURL(text)) {
       setIsImporting(true);
       try {
-        const entries = await wailsAPI.fetchSubscription(text.trim());
+        let entries;
+        try {
+          entries = await wailsAPI.fetchSubscription(text.trim());
+        } catch (fetchErr) {
+          if (!isInsecureSubscriptionError(fetchErr)) throw fetchErr;
+          const ok = await showConfirmDialog({
+            title: t("add.insecureSubscriptionTitle"),
+            message: t("add.insecureSubscriptionMessage"),
+            variant: "warning",
+            confirmText: t("add.insecureSubscriptionConfirm"),
+            cancelText: t("common.cancel"),
+          });
+          if (!ok) {
+            showAlertDialog({
+              title: t("common.notice"),
+              message: t("add.insecureSubscriptionCancelled"),
+              variant: "warning",
+            });
+            return;
+          }
+          entries = await wailsAPI.fetchSubscription(text.trim(), true);
+        }
         if (!entries || entries.length === 0) {
           showAlertDialog({
             title: t("common.notice"),
@@ -354,16 +377,43 @@ export const AddProxyView = () => {
       if (allSameSubscription) {
         const label = subscriptionLabelFromURL(subURL);
         let entries;
-        try {
-          entries = await wailsAPI.addSubscription(label, subURL);
-        } catch (err) {
-          const msg = String(err?.message || err || "");
-          if (msg.includes("уже добавлена")) {
-            const cfg = await wailsAPI.getConfig();
-            const existing = cfg.subscriptions?.find((s) => s.url === subURL);
-            if (!existing) throw err;
-            entries = await wailsAPI.refreshSubscription(existing.id);
-          } else {
+        let allowInsecure = false;
+        for (;;) {
+          try {
+            entries = await wailsAPI.addSubscription(
+              label,
+              subURL,
+              allowInsecure,
+            );
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err || "");
+            if (isInsecureSubscriptionError(err) && !allowInsecure) {
+              const ok = await showConfirmDialog({
+                title: t("add.insecureSubscriptionTitle"),
+                message: t("add.insecureSubscriptionMessage"),
+                variant: "warning",
+                confirmText: t("add.insecureSubscriptionConfirm"),
+                cancelText: t("common.cancel"),
+              });
+              if (!ok) {
+                showAlertDialog({
+                  title: t("common.notice"),
+                  message: t("add.insecureSubscriptionCancelled"),
+                  variant: "warning",
+                });
+                return;
+              }
+              allowInsecure = true;
+              continue;
+            }
+            if (msg.includes("уже добавлена")) {
+              const cfg = await wailsAPI.getConfig();
+              const existing = cfg.subscriptions?.find((s) => s.url === subURL);
+              if (!existing) throw err;
+              entries = await wailsAPI.refreshSubscription(existing.id);
+              break;
+            }
             throw err;
           }
         }
@@ -412,7 +462,28 @@ export const AddProxyView = () => {
     if (isSubscriptionURL(text)) {
       setVpnLoading(true);
       try {
-        const entries = await wailsAPI.fetchSubscription(text);
+        let entries;
+        try {
+          entries = await wailsAPI.fetchSubscription(text);
+        } catch (fetchErr) {
+          if (!isInsecureSubscriptionError(fetchErr)) throw fetchErr;
+          const ok = await showConfirmDialog({
+            title: t("add.insecureSubscriptionTitle"),
+            message: t("add.insecureSubscriptionMessage"),
+            variant: "warning",
+            confirmText: t("add.insecureSubscriptionConfirm"),
+            cancelText: t("common.cancel"),
+          });
+          if (!ok) {
+            showAlertDialog({
+              title: t("common.notice"),
+              message: t("add.insecureSubscriptionCancelled"),
+              variant: "warning",
+            });
+            return;
+          }
+          entries = await wailsAPI.fetchSubscription(text, true);
+        }
         if (!entries || entries.length === 0) {
           showAlertDialog({
             title: t("common.notice"),

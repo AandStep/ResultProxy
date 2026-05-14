@@ -2,7 +2,7 @@
   "sidebar": {
     "offline": "Служба не отвечает",
     "home": "Главная",
-    "buy": "Купить сервера",
+    "buy": "Сервера impVPN",
     "add": "Добавить",
     "list": "Список серверов",
     "rules": "Умные правила",
@@ -42,7 +42,9 @@
     "modeTunnel": "ТУННЕЛЬ",
     "favorites": "Избранное",
     "favorite": "В избранное",
-    "unfavorite": "Убрать из избранного"
+    "unfavorite": "Убрать из избранного",
+    "pingTooltip": "Замер задержки до серверов (TCP, не через туннель)",
+    "sortMenuTooltip": "Сортировка списка серверов"
   },
   "add": {
     "titleAdd": "Добавить конфигурацию",
@@ -95,6 +97,10 @@
     "naiveLog": "Log (необязательно, для справки)",
     "loadSubscription": "Загрузить",
     "subscriptionError": "Ошибка загрузки подписки",
+    "insecureSubscriptionTitle": "Небезопасная ссылка на подписку",
+    "insecureSubscriptionMessage": "Этот адрес использует HTTP без шифрования. Токен подписки, учётные данные и идентификатор устройства (HWID) могут быть перехвачены или подменены в сети. Продолжайте только если осознаёте риск.",
+    "insecureSubscriptionConfirm": "Всё равно подключить",
+    "insecureSubscriptionCancelled": "Импорт отменён. Для безопасного подключения используйте ссылку на подписку по HTTPS.",
     "vpnDetected": "Обнаружено {{count}} VPN-серверов",
     "vpnKeepTypes": "VPN-протоколы определены автоматически из ссылок",
     "plainProxiesProtocol": "Выберите протокол для {{count}} обычных прокси:",
@@ -243,7 +249,7 @@
     "title": "Сохраненные профили",
     "desc": "Управляйте вашими серверами",
     "empty": "Список серверов пуст.",
-    "pinging": "Опрос...",
+    "pinging": "Опрос",
     "pingTooltip": "Прямая TCP-задержка до сервера (не через тоннель)",
     "searchPlaceholder": "Поиск по имени или IP...",
     "sortBy": "Сортировка",
@@ -253,11 +259,13 @@
       "oldest": "Старые",
       "country": "По стране",
       "type": "По типу",
-      "provider": "По провайдеру"
+      "provider": "По провайдеру",
+      "ping": "По пингу"
     },
     "myProxies": "Мои сервера",
     "refreshSub": "Обновить",
     "refreshSubAria": "Обновить подписку",
+    "manualPingAria": "Пинг серверов этой подписки",
     "deleteSubscriptionAria": "Удалить подписку",
     "deleteManualGroupAria": "Удалить все серверы вручную",
     "confirmDeleteSubscription": "Удалить подписку «{{name}}» и все её серверы из списка?",
@@ -267,6 +275,10 @@
     "subRefreshHint": "Если подписка не работает — нажмите кнопку обновления.",
     "noResults": "По вашему запросу прокси не найдены.",
     "autoType": "Авто",
+    "sectionType": "Заголовок",
+    "sectionSubtitle": "Выберите локацию ниже",
+    "sectionPing": "—",
+    "sectionNoConnect": "Это подпись группы из подписки — выберите сервер ниже.",
     "ipHidden": "Скрыто",
     "favoriteAria": "В избранное",
     "unfavoriteAria": "Убрать из избранного",
@@ -311,9 +323,9 @@
     }
   },
   "buy": {
-    "title": "Купить сервера",
+    "title": "Сервера impVPN",
     "desc": "Надежные IPv4 и IPv6 прокси для любых задач от наших партнеров",
-    "vpn_section_title": "Купить ВПН",
+    "vpn_section_title": "Сервера impVPN",
     "vpn_section_desc": "impVPN — Просто делаем интернет свободнее🛸",
     "proxy_section_title": "Купить прокси",
     "proxy_section_desc": "Надежные IPv4 и IPv6 прокси для любых задач от наших партнеров",

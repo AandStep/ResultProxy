@@ -6,7 +6,7 @@ import {logger} from '../models';
 import {system} from '../models';
 import {updater} from '../models';
 
-export function AddSubscription(arg1:string,arg2:string,arg3:boolean):Promise<Array<config.ProxyEntry>>;
+export function AddSubscription(arg1:string,arg2:string,arg3:boolean,arg4:string):Promise<Array<config.ProxyEntry>>;
 
 export function ApplyMode(arg1:string):Promise<proxy.ConnectResultDTO>;
 

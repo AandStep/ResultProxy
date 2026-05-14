@@ -414,15 +414,18 @@ export const useAppConfig = (addLog) => {
 
     const handleBulkSaveProxies = useCallback(
         async (proxiesData, setActiveTab, defaultProtocol) => {
-            const VPN_TYPES = ["SS", "VMESS", "VLESS", "TROJAN", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "AUTO"];
+            const VPN_TYPES = ["SS", "VMESS", "VLESS", "TROJAN", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "AUTO", "SECTION"];
             const now = Date.now();
             const finalProxies = await Promise.all(
                 proxiesData.map(async (p, index) => {
                     const isVpn = VPN_TYPES.includes(p.type?.toUpperCase());
                     // Skip country detection for AUTO entries (no real host).
-                    const countryCode = (p.type?.toUpperCase() === "AUTO" || !p.ip)
-                        ? (p.country || "")
-                        : await detectCountry(p.ip);
+                    const countryCode =
+                        p.type?.toUpperCase() === "AUTO" ||
+                        p.type?.toUpperCase() === "SECTION" ||
+                        !p.ip
+                            ? (p.country || "")
+                            : await detectCountry(p.ip);
                     return {
                         ...p,
                         id: String(p.id || now + index),
@@ -434,7 +437,17 @@ export const useAppConfig = (addLog) => {
             );
 
             setProxies((prev) => {
-                const VPN_SET = new Set(["SS", "VMESS", "VLESS", "TROJAN", "WIREGUARD", "AMNEZIAWG", "HYSTERIA2", "AUTO"]);
+                const VPN_SET = new Set([
+                    "SS",
+                    "VMESS",
+                    "VLESS",
+                    "TROJAN",
+                    "WIREGUARD",
+                    "AMNEZIAWG",
+                    "HYSTERIA2",
+                    "AUTO",
+                    "SECTION",
+                ]);
                 const newKeys = new Set(
                     finalProxies
                         .filter((p) => VPN_SET.has(p.type))

@@ -135,6 +135,19 @@ export const useDaemonControl = (
                 setIsDisconnecting(false);
             } else {
                 setIsConnecting(true);
+                if (targetProxy?.type?.toUpperCase() === "SECTION") {
+                    setIsConnecting(false);
+                    showAlertDialog({
+                        title: t("common.notice"),
+                        message:
+                            t("proxyList.sectionNoConnect") ||
+                            "This row is a subscription group label — pick a server below.",
+                        variant: "info",
+                    });
+                    bumpGen();
+                    isSwitchingRef.current = false;
+                    return;
+                }
                 const isAuto = targetProxy?.type?.toUpperCase() === "AUTO";
                 const candidates = getConnectCandidates(targetProxy).slice(0, isAuto ? AUTO_MAX_ATTEMPTS : 1);
                 addLog(`Подключение к ${targetProxy.name}...`, "info");
@@ -237,6 +250,17 @@ export const useDaemonControl = (
             if (isSwitchingRef.current) return;
             if (!forceReconnect && activeProxy?.id === proxy.id && isConnected)
                 return;
+
+            if (proxy?.type?.toUpperCase() === "SECTION") {
+                showAlertDialog({
+                    title: t("common.notice"),
+                    message:
+                        t("proxyList.sectionNoConnect") ||
+                        "This row is a subscription group label — pick a server below.",
+                    variant: "info",
+                });
+                return;
+            }
 
             try {
                 bumpGen();

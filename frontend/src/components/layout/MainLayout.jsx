@@ -17,6 +17,7 @@
 
 import React, { useEffect, useRef } from "react";
 import { Activity, ShoppingCart, Plus, List, Settings } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useConfigContext } from "../../context/ConfigContext";
 import { Sidebar } from "./Sidebar";
 import { MobileHeader } from "./MobileHeader";
@@ -34,6 +35,7 @@ const MobileNavItem = ({ icon, label, isActive, onClick }) => (
 );
 
 export const MainLayout = ({ children }) => {
+  const { t } = useTranslation();
   const { activeTab, setActiveTab, setEditingProxy } = useConfigContext();
   const mainScrollRef = useRef(null);
   const prevTabRef = useRef(activeTab);
@@ -91,7 +93,7 @@ export const MainLayout = ({ children }) => {
         />
         <MobileNavItem
           icon={<ShoppingCart />}
-          label="Купить"
+          label={t("sidebar.buy")}
           isActive={activeTab === "buy"}
           onClick={() => setActiveTab("buy")}
         />

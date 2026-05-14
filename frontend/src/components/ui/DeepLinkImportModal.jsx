@@ -20,6 +20,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { Link2 } from "lucide-react";
 import wailsAPI from "../../utils/wailsAPI";
+import { isInsecureSubscriptionError } from "../../utils/subscriptionSecurity";
 import {
   isSubscriptionURL,
   isEncryptedSubscription,
@@ -83,9 +84,12 @@ const DeepLinkImportModal = () => {
   const {
     pendingDeepLink,
     setPendingDeepLink,
+    pendingDeepLinkSource,
+    setPendingDeepLinkSource,
     handleBulkSaveProxies,
     setActiveTab,
     setSubscriptions,
+    showConfirmDialog,
   } = useConfigContext();
 
   const [stage, setStage] = useState("idle");
@@ -98,6 +102,7 @@ const DeepLinkImportModal = () => {
     const text = pendingDeepLink.trim();
     if (!text) {
       setPendingDeepLink("");
+      setPendingDeepLinkSource("");
       return;
     }
     const myReq = ++reqId.current;
@@ -109,7 +114,25 @@ const DeepLinkImportModal = () => {
       try {
         let entries;
         if (isSubscriptionURL(text)) {
-          entries = await wailsAPI.fetchSubscription(text);
+          try {
+            entries = await wailsAPI.fetchSubscription(text);
+          } catch (fetchErr) {
+            if (!isInsecureSubscriptionError(fetchErr)) throw fetchErr;
+            const ok = await showConfirmDialog({
+              title: t("add.insecureSubscriptionTitle"),
+              message: t("add.insecureSubscriptionMessage"),
+              variant: "warning",
+              confirmText: t("add.insecureSubscriptionConfirm"),
+              cancelText: t("common.cancel"),
+            });
+            if (!ok) {
+              if (myReq !== reqId.current) return;
+              setError(t("add.insecureSubscriptionCancelled"));
+              setStage("error");
+              return;
+            }
+            entries = await wailsAPI.fetchSubscription(text, true);
+          }
         } else if (isEncryptedSubscription(text)) {
           entries = await wailsAPI.parseSubscriptionText(text);
         } else {
@@ -129,7 +152,7 @@ const DeepLinkImportModal = () => {
         setStage("error");
       }
     })();
-  }, [pendingDeepLink, setPendingDeepLink, t]);
+  }, [pendingDeepLink, setPendingDeepLink, showConfirmDialog, t]);
 
   const close = () => {
     reqId.current++;
@@ -137,6 +160,7 @@ const DeepLinkImportModal = () => {
     setPendingProxies([]);
     setError("");
     setPendingDeepLink("");
+    setPendingDeepLinkSource("");
   };
 
   const handleConfirm = async (protocol) => {
@@ -157,16 +181,41 @@ const DeepLinkImportModal = () => {
       if (allSameSubscription) {
         const label = subscriptionLabelFromURL(subURL);
         let entries;
-        try {
-          entries = await wailsAPI.addSubscription(label, subURL);
-        } catch (err) {
-          const msg = String(err?.message || err || "");
-          if (msg.includes("уже добавлена")) {
-            const cfg = await wailsAPI.getConfig();
-            const existing = cfg.subscriptions?.find((s) => s.url === subURL);
-            if (!existing) throw err;
-            entries = await wailsAPI.refreshSubscription(existing.id);
-          } else {
+        let allowInsecure = false;
+        for (;;) {
+          try {
+            entries = await wailsAPI.addSubscription(
+              label,
+              subURL,
+              allowInsecure,
+              pendingDeepLinkSource,
+            );
+            break;
+          } catch (err) {
+            const msg = String(err?.message || err || "");
+            if (isInsecureSubscriptionError(err) && !allowInsecure) {
+              const ok = await showConfirmDialog({
+                title: t("add.insecureSubscriptionTitle"),
+                message: t("add.insecureSubscriptionMessage"),
+                variant: "warning",
+                confirmText: t("add.insecureSubscriptionConfirm"),
+                cancelText: t("common.cancel"),
+              });
+              if (!ok) {
+                setError(t("add.insecureSubscriptionCancelled"));
+                setStage("error");
+                return;
+              }
+              allowInsecure = true;
+              continue;
+            }
+            if (msg.includes("уже добавлена")) {
+              const cfg = await wailsAPI.getConfig();
+              const existing = cfg.subscriptions?.find((s) => s.url === subURL);
+              if (!existing) throw err;
+              entries = await wailsAPI.refreshSubscription(existing.id);
+              break;
+            }
             throw err;
           }
         }

@@ -192,8 +192,13 @@ func (a *App) HandleDeepLink(url string) {
 		a.QueueDeepLink(url)
 		return
 	}
+	source := ""
+	if proxy.DeepLinkUsesRvsubPath(url) {
+		source = "rvsub"
+	}
 	wailsRuntime.EventsEmit(a.ctx, "deeplink:received", map[string]interface{}{
 		"payload": payload,
+		"source":  source,
 	})
 }
 
@@ -1654,8 +1659,8 @@ func (a *App) fetchSubscriptionFromURL(subURL string, allowInsecure bool) ([]con
 		entries[i].ID = fmt.Sprintf("%d", baseID+int64(i))
 	}
 
-	// Remove sentinel/routing-only entries that have no real host (0.0.0.0).
-	entries = proxy.FilterInvalidSubscriptionEntries(entries)
+	// Turn placeholder-host rows (e.g. 0.0.0.0) into SECTION labels; keep order.
+	entries = proxy.FinalizeSubscriptionEntries(entries)
 
 	autoCreated := false
 	var individualMembers []config.ProxyEntry
@@ -1754,7 +1759,11 @@ func (a *App) ParseSubscriptionText(text string) ([]config.ProxyEntry, error) {
 			return entries, ferr
 		}
 	}
-	return proxy.ParseSubscriptionBody(text)
+	entries, err := proxy.ParseSubscriptionBody(text)
+	if err != nil {
+		return nil, err
+	}
+	return proxy.FinalizeSubscriptionEntries(entries), nil
 }
 
 func (a *App) RefreshSubscription(subID string) ([]config.ProxyEntry, error) {
@@ -1843,7 +1852,7 @@ func (a *App) RefreshSubscription(subID string) ([]config.ProxyEntry, error) {
 // passed explicitly for http:// URLs after the user has confirmed the
 // warning. The consent is persisted on the Subscription record so
 // RefreshSubscription doesn't need to re-prompt.
-func (a *App) AddSubscription(name, subURL string, allowInsecure bool) ([]config.ProxyEntry, error) {
+func (a *App) AddSubscription(name, subURL string, allowInsecure bool, source string) ([]config.ProxyEntry, error) {
 	if a.config == nil {
 		return nil, fmt.Errorf("config manager not initialized")
 	}
@@ -1897,6 +1906,7 @@ func (a *App) AddSubscription(name, subURL string, allowInsecure bool) ([]config
 		TrafficTotal:    tot,
 		ExpireUnix:      exp,
 		IconURL:         iconURL,
+		Source:          strings.TrimSpace(source),
 		// Only mark as allow-insecure when the URL actually is plaintext —
 		// no need to flag https:// subscriptions, which would be misleading.
 		AllowInsecure: allowInsecure && isInsecureSubURL(subURL),

@@ -65,7 +65,14 @@ export const ConnectionProvider = ({ children }) => {
         }
     }, [isApplyingMode]);
 
-    const pings = useDaemonPing(proxies, isConfigLoaded);
+    const {
+        pings,
+        refreshPings,
+        isPinging,
+        isManualPinging,
+        pendingPingIds,
+        isPingPending,
+    } = useDaemonPing(proxies, isConfigLoaded);
 
     const { isProxyDead, stats, speedHistory, daemonStatus } = useDaemonStatus(
         isConnected,
@@ -116,6 +123,11 @@ export const ConnectionProvider = ({ children }) => {
         stats,
         speedHistory,
         pings,
+        refreshPings,
+        isPinging,
+        isManualPinging,
+        pendingPingIds,
+        isPingPending,
         daemonStatus,
         disconnectOnly,
         toggleConnection,

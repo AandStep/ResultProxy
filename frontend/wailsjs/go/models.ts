@@ -10,6 +10,7 @@ export namespace config {
 	    trafficTotal?: number;
 	    expireUnix?: number;
 	    iconUrl?: string;
+	    source?: string;
 	    allowInsecure?: boolean;
 	
 	    static createFrom(source: any = {}) {
@@ -27,6 +28,7 @@ export namespace config {
 	        this.trafficTotal = source["trafficTotal"];
 	        this.expireUnix = source["expireUnix"];
 	        this.iconUrl = source["iconUrl"];
+	        this.source = source["source"];
 	        this.allowInsecure = source["allowInsecure"];
 	    }
 	}

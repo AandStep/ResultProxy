@@ -2,7 +2,7 @@
   "sidebar": {
     "offline": "Daemon Offline",
     "home": "Home",
-    "buy": "Buy Servers",
+    "buy": "impVPN Servers",
     "add": "Add Proxy",
     "list": "Server List",
     "rules": "Smart Rules",
@@ -42,7 +42,9 @@
     "modeTunnel": "TUNNEL",
     "favorites": "Favorites",
     "favorite": "Add to favorites",
-    "unfavorite": "Remove from favorites"
+    "unfavorite": "Remove from favorites",
+    "pingTooltip": "Measure latency to servers (TCP, not through tunnel)",
+    "sortMenuTooltip": "Sort servers in this list"
   },
   "add": {
     "titleAdd": "Add Configuration",
@@ -95,6 +97,10 @@
     "naiveLog": "Log (optional, saved for reference)",
     "loadSubscription": "Load",
     "subscriptionError": "Subscription fetch error",
+    "insecureSubscriptionTitle": "Insecure subscription link",
+    "insecureSubscriptionMessage": "This URL uses HTTP without encryption. Your subscription token, login details, and device identifier (HWID) could be read or modified on the network. Continue only if you accept that risk.",
+    "insecureSubscriptionConfirm": "Connect anyway",
+    "insecureSubscriptionCancelled": "Import cancelled. Use an HTTPS subscription link for a secure connection.",
     "vpnDetected": "Detected {{count}} VPN servers",
     "vpnKeepTypes": "VPN protocols are auto-detected from links",
     "plainProxiesProtocol": "Select protocol for {{count}} plain proxies:",
@@ -252,11 +258,13 @@
       "oldest": "Oldest",
       "country": "Country",
       "type": "Type",
-      "provider": "Provider"
+      "provider": "Provider",
+      "ping": "Ping (latency)"
     },
     "myProxies": "My Servers",
     "refreshSub": "Refresh",
     "refreshSubAria": "Refresh subscription",
+    "manualPingAria": "Ping servers in this subscription",
     "deleteSubscriptionAria": "Delete subscription",
     "deleteManualGroupAria": "Delete all manual servers",
     "confirmDeleteSubscription": "Delete subscription \"{{name}}\" and all its servers from the list?",
@@ -266,6 +274,10 @@
     "subRefreshHint": "If the subscription does not work, use the refresh button.",
     "noResults": "No proxies found matching your criteria.",
     "autoType": "Auto",
+    "sectionType": "Group label",
+    "sectionSubtitle": "Select a location below",
+    "sectionPing": "—",
+    "sectionNoConnect": "This row is a group label from the subscription — pick a real server below.",
     "ipHidden": "Hidden",
     "favoriteAria": "Add to favorites",
     "unfavoriteAria": "Remove from favorites",
@@ -310,9 +322,9 @@
     }
   },
   "buy": {
-    "title": "Buy Servers",
+    "title": "impVPN Servers",
     "desc": "Reliable IPv4 and IPv6 proxies for any tasks from our partners",
-    "vpn_section_title": "Buy VPN",
+    "vpn_section_title": "impVPN Servers",
     "vpn_section_desc": "impVPN — Just making the internet freer🛸",
     "proxy_section_title": "Buy Proxies",
     "proxy_section_desc": "Reliable IPv4 and IPv6 proxies for any tasks from our partners",

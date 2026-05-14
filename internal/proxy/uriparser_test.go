@@ -21,6 +21,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"resultproxy-wails/internal/config"
 )
 
 func TestVLESSURIEmbeddedExtraAndOutboundXHTTP(t *testing.T) {
@@ -716,6 +718,36 @@ func TestParseSubscriptionBodyUnsupported(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported subscription format") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFinalizeSubscriptionEntries_placeholderHost(t *testing.T) {
+	in := []config.ProxyEntry{
+		{ID: "1", Name: "Когда не глушат", Type: "HYSTERIA2", IP: "0.0.0.0", Port: 443, Password: "x", Extra: json.RawMessage(`{"password":"x"}`)},
+		{ID: "2", Name: "Austria", Type: "HYSTERIA2", IP: "1.2.3.4", Port: 443, Password: "y"},
+	}
+	out := FinalizeSubscriptionEntries(in)
+	if len(out) != 2 {
+		t.Fatalf("len=%d", len(out))
+	}
+	if out[0].Type != "SECTION" || out[0].IP != "" || out[0].Port != 0 || out[0].Password != "" || len(out[0].Extra) != 0 {
+		t.Fatalf("first entry: %+v", out[0])
+	}
+	if out[0].Name != "Когда не глушат" || out[0].ID != "1" {
+		t.Fatalf("first metadata: %+v", out[0])
+	}
+	if out[1].Type != "HYSTERIA2" || out[1].IP != "1.2.3.4" {
+		t.Fatalf("second entry: %+v", out[1])
+	}
+}
+
+func TestFinalizeSubscriptionEntries_ipv6Unspecified(t *testing.T) {
+	in := []config.ProxyEntry{
+		{ID: "a", Name: "H", Type: "VLESS", IP: "::", Port: 443},
+	}
+	out := FinalizeSubscriptionEntries(in)
+	if out[0].Type != "SECTION" || out[0].IP != "" {
+		t.Fatalf("got %+v", out[0])
 	}
 }
 

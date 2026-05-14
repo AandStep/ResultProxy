@@ -344,6 +344,16 @@ func (m *Manager) Connect(ctx context.Context, proxy ProxyConfig, mode ProxyMode
 	proxyTypeLower := strings.ToLower(strings.TrimSpace(proxy.Type))
 	m.log.Info(fmt.Sprintf("[PROXY] Параметры подключения: mode=%s proxyType=%s", mode, proxyTypeLower))
 
+	if proxyTypeLower == "section" {
+		m.mu.Unlock()
+		return ConnectResultDTO{
+			Success:   false,
+			Message:   "Эта запись — разделитель в подписке, подключение к ней невозможно.",
+			Reason:    "subscription section",
+			ErrorCode: ConnectErrorInvalidConfig,
+		}
+	}
+
 	isEndpointProtocol := proxyTypeLower == "wireguard" || proxyTypeLower == "amneziawg"
 	if isEndpointProtocol && mode == ProxyModeProxy {
 		m.mu.Unlock()

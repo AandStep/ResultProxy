@@ -63,6 +63,8 @@ type Subscription struct {
 	ExpireUnix      int64 `json:"expireUnix,omitempty"`
 
 	IconURL string `json:"iconUrl,omitempty"`
+	// Source is an optional provenance marker (e.g. "rvsub" for resultv://rvsub/… deeplinks).
+	Source string `json:"source,omitempty"`
 
 	// AllowInsecure records that the user explicitly accepted fetching this
 	// subscription over plaintext HTTP. We persist the consent so subsequent

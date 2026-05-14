@@ -162,6 +162,9 @@ export const useDaemonStatus = (
                         const currentPort = Number(data.currentProxy.port || 0);
                         const localMatchedProxy = proxies.find(
                             (p) => {
+                                if (p.type?.toUpperCase() === "SECTION") {
+                                    return false;
+                                }
                                 const proxyID = String(p.id || "").trim();
                                 if (currentID && proxyID && proxyID === currentID) {
                                     return true;
@@ -200,7 +203,12 @@ export const useDaemonStatus = (
                             } catch (e) {}
                         }
 
-                        setActiveProxy(resolvedProxy);
+                        if (
+                            resolvedProxy &&
+                            String(resolvedProxy.type || "").toUpperCase() !== "SECTION"
+                        ) {
+                            setActiveProxy(resolvedProxy);
+                        }
                     }
                 }
 
